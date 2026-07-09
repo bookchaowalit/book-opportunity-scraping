@@ -1,0 +1,106 @@
+[
+  {
+    "source": "hn",
+    "status": "ok",
+    "items": 4,
+    "duration": 16.49,
+    "error": null,
+    "timestamp": "2026-07-07T00:55:07.060442"
+  },
+  {
+    "source": "github",
+    "status": "ok",
+    "items": 11,
+    "duration": 0.99,
+    "error": null,
+    "timestamp": "2026-07-07T00:55:08.046852"
+  },
+  {
+    "source": "firecrawl-search",
+    "status": "ok",
+    "items": 10,
+    "duration": 37.35,
+    "error": null,
+    "timestamp": "2026-07-07T00:55:45.391930"
+  },
+  {
+    "source": "etsy",
+    "status": "ok",
+    "items": 0,
+    "duration": 24.62,
+    "error": null,
+    "timestamp": "2026-07-07T00:56:10.011276"
+  },
+  {
+    "source": "ebay",
+    "status": "ok",
+    "items": 0,
+    "duration": 24.73,
+    "error": null,
+    "timestamp": "2026-07-07T00:56:34.740608"
+  },
+  {
+    "source": "tiktok",
+    "status": "ok",
+    "items": 0,
+    "duration": 24.94,
+    "error": null,
+    "timestamp": "2026-07-07T00:56:59.680514"
+  },
+  {
+    "source": "reddit",
+    "status": "ok",
+    "items": 0,
+    "duration": 24.82,
+    "error": null,
+    "timestamp": "2026-07-07T00:57:24.502698"
+  },
+  {
+    "source": "producthunt",
+    "status": "ok",
+    "items": 0,
+    "duration": 7.19,
+    "error": null,
+    "timestamp": "2026-07-07T00:57:31.694780"
+  },
+  {
+    "source": "amazon",
+    "status": "ok",
+    "items": 0,
+    "duration": 24.74,
+    "error": null,
+    "timestamp": "2026-07-07T00:57:56.434027"
+  },
+  {
+    "source": "crypto",
+    "status": "error",
+    "items": 0,
+    "duration": 0,
+    "error": "Unknown source",
+    "timestamp": "2026-07-07T00:57:56.434089"
+  },
+  {
+    "source": "tcg-prices",
+    "status": "ok",
+    "items": 0,
+    "duration": 24.79,
+    "error": null,
+    "timestamp": "2026-07-07T00:58:21.226055"
+  },
+  {
+    "source": "etsy-sold",
+    "status": "ok",
+    "items": 0,
+    "duration": 21.03,
+    "error": null,
+    "timestamp": "2026-07-07T00:58:42.258773"
+  },
+  {
+    "source": "amazon-bsr",
+    "status": "ok",
+    "items": 0,
+    "duration": 7.55,
+    "error": null,
+    "timestamp": "2026-07-07T00:58:49.808673"
+  }
+]
