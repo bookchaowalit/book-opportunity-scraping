@@ -43,6 +43,10 @@ from pathlib import Path
 from typing import List, Dict, Any
 from xml.etree import ElementTree as ET
 
+# Import database connection helper
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "infra" / "scripts" / "utils"))
+from db_connect import get_db_connection
+
 try:
     from dotenv import load_dotenv
     _root = Path(__file__).resolve().parents[4]
@@ -674,21 +678,21 @@ def print_source_health_report(health_records: List[Dict[str, Any]]):
     print(f"\n{'='*60}")
     print(f"  SOURCE HEALTH REPORT")
     print(f"{'='*60}")
-    
+
     ok_sources = [h for h in health_records if h['status'] == 'ok']
     err_sources = [h for h in health_records if h['status'] in ('error', 'timeout')]
-    
+
     if ok_sources:
         print(f"\n  ✓ HEALTHY ({len(ok_sources)}):")
         for h in ok_sources:
             print(f"    {h['source']:20s} | {h['items']:3d} items | {h['duration']:5.2f}s")
-    
+
     if err_sources:
         print(f"\n  ✗ FAILED ({len(err_sources)}):")
         for h in err_sources:
             err_msg = h.get('error', 'Unknown error')[:50]
             print(f"    {h['source']:20s} | {h['status']:7s} | {h['duration']:5.2f}s | {err_msg}")
-    
+
     total_items = sum(h['items'] for h in health_records)
     total_time = sum(h['duration'] for h in health_records)
     print(f"\n  Total: {total_items} items from {len(ok_sources)}/{len(health_records)} sources in {total_time:.2f}s")
@@ -696,12 +700,12 @@ def print_source_health_report(health_records: List[Dict[str, Any]]):
 
 def generate_dashboard_json(health_records: List[Dict[str, Any]], opportunities: List[Dict[str, Any]], new_count: int):
     """Update scraper_dashboard.json with opportunities data.
-    
+
     Merges opportunity scraper health into the existing dashboard JSON
     so the morning digest can show opportunity highlights.
     """
     dashboard_path = ROOT / "data" / "briefings" / "scraper_dashboard.json"
-    
+
     # Load existing dashboard
     dashboard = {}
     if dashboard_path.exists():
@@ -710,15 +714,15 @@ def generate_dashboard_json(health_records: List[Dict[str, Any]], opportunities:
                 dashboard = json.load(f)
         except Exception:
             dashboard = {}
-    
+
     # Ensure 'sources' key exists
     if "sources" not in dashboard:
         dashboard["sources"] = {}
-    
+
     # Update opportunities section
     ok_count = sum(1 for h in health_records if h['status'] == 'ok')
     total_count = len(health_records)
-    
+
     dashboard["sources"]["opportunities"] = {
         "name": "Money Opportunities",
         "icon": "💰",
@@ -744,10 +748,10 @@ def generate_dashboard_json(health_records: List[Dict[str, Any]], opportunities:
             for o in opportunities[:5]
         ],
     }
-    
+
     # Update generated_at timestamp
     dashboard["generated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     # Save
     dashboard_path.parent.mkdir(parents=True, exist_ok=True)
     with open(dashboard_path, 'w') as f:
@@ -760,9 +764,9 @@ def init_action_tracker():
     """Initialize opportunity_actions table if not exists."""
     if not DB_PATH.exists():
         return False
-    
+
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_db_connection()
         conn.execute("""
             CREATE TABLE IF NOT EXISTS opportunity_actions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -787,22 +791,22 @@ def init_action_tracker():
         return False
 
 
-def track_action(url: str, action: str, title: str = None, source: str = None, 
+def track_action(url: str, action: str, title: str = None, source: str = None,
                  category: str = None, score: int = None, notes: str = None):
     """Track action for an opportunity (act_on/skip/monitor)."""
     if not DB_PATH.exists():
         print(f"  Warning: DB not found at {DB_PATH}")
         return False
-    
+
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_db_connection()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+
         # Check if exists
         existing = conn.execute(
             "SELECT id FROM opportunity_actions WHERE url = ?", (url,)
         ).fetchone()
-        
+
         if existing:
             conn.execute("""
                 UPDATE opportunity_actions SET
@@ -815,7 +819,7 @@ def track_action(url: str, action: str, title: str = None, source: str = None,
                 (url, title, source, category, trend_score, action, action_notes, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (url, title, source, category, score, action, notes, now, now))
-        
+
         conn.commit()
         conn.close()
         print(f"  Tracked action '{action}' for: {title[:50] if title else url[:50]}")
@@ -830,11 +834,11 @@ def track_revenue(url: str, actual: float = None, expected: float = None):
     if not DB_PATH.exists():
         print(f"  Warning: DB not found at {DB_PATH}")
         return False
-    
+
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_db_connection()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+
         updates = []
         params = []
         if actual is not None:
@@ -843,15 +847,15 @@ def track_revenue(url: str, actual: float = None, expected: float = None):
         if expected is not None:
             updates.append("revenue_expected = ?")
             params.append(expected)
-        
+
         if not updates:
             print("  Warning: No revenue values provided")
             return False
-        
+
         updates.append("updated_at = ?")
         params.append(now)
         params.append(url)
-        
+
         conn.execute(f"""
             UPDATE opportunity_actions SET {', '.join(updates)} WHERE url = ?
         """, params)
@@ -869,13 +873,13 @@ def list_actions(action_filter: str = None):
     if not DB_PATH.exists():
         print(f"  Warning: DB not found at {DB_PATH}")
         return []
-    
+
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        
+        conn = get_db_connection()
+
         if action_filter:
             rows = conn.execute("""
-                SELECT url, title, source, category, trend_score, action, 
+                SELECT url, title, source, category, trend_score, action,
                        action_notes, revenue_actual, revenue_expected, created_at
                 FROM opportunity_actions
                 WHERE action = ?
@@ -883,22 +887,22 @@ def list_actions(action_filter: str = None):
             """, (action_filter,)).fetchall()
         else:
             rows = conn.execute("""
-                SELECT url, title, source, category, trend_score, action, 
+                SELECT url, title, source, category, trend_score, action,
                        action_notes, revenue_actual, revenue_expected, created_at
                 FROM opportunity_actions
                 ORDER BY trend_score DESC
             """).fetchall()
-        
+
         conn.close()
-        
+
         if not rows:
             print("  No tracked actions found")
             return []
-        
+
         print(f"\n{'='*80}")
         print(f"  TRACKED ACTIONS ({len(rows)})")
         print(f"{'='*80}")
-        
+
         for row in rows:
             url, title, source, category, score, action, notes, rev_actual, rev_expected, created = row
             action_icon = {'act_on': '✓', 'skip': '✗', 'monitor': '⚲'}.get(action, '?')
@@ -914,7 +918,7 @@ def list_actions(action_filter: str = None):
             if notes:
                 print(f"    Notes: {notes[:60]}")
             print(f"    URL: {url[:70]}")
-        
+
         return rows
     except Exception as e:
         print(f"  Warning: Could not list actions: {e}")
@@ -936,12 +940,12 @@ CATEGORY_TO_TYPE = {
 
 def save_to_db(opportunities: List[Dict[str, Any]]) -> int:
     """Save opportunities to the SQLite opportunities table.
-    
+
     Maps scraper fields to the DB schema:
     - name, description, type, tier, status
     - pain_level, budget_level, ai_leverage_level, competition_level
     - total_score, target_market, revenue_model, price_range, notes
-    
+
     Returns number of new rows inserted.
     """
     if not DB_PATH.exists():
@@ -949,7 +953,7 @@ def save_to_db(opportunities: List[Dict[str, Any]]) -> int:
         return 0
 
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_db_connection()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         inserted = 0
 
@@ -1156,7 +1160,7 @@ def fuzzy_title_match(title_a: str, title_b: str) -> bool:
 
 def deduplicate_cross_source(opportunities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Deduplicate across sources using URL + fuzzy title matching.
-    
+
     When same opportunity appears in multiple sources:
     - Keep the highest score
     - Merge source info into notes
@@ -1164,18 +1168,18 @@ def deduplicate_cross_source(opportunities: List[Dict[str, Any]]) -> List[Dict[s
     """
     merged = []
     seen_titles = []  # (title, index_in_merged)
-    
+
     for opp in opportunities:
         url = opp.get("url", "")
         title = opp.get("title", "")
-        
+
         # Check URL match
         url_match = None
         for i, m in enumerate(merged):
             if m.get("url") == url and url:
                 url_match = i
                 break
-        
+
         if url_match is not None:
             # Same URL — merge sources
             existing = merged[url_match]
@@ -1188,14 +1192,14 @@ def deduplicate_cross_source(opportunities: List[Dict[str, Any]]) -> List[Dict[s
             # Boost score for cross-source validation
             merged[url_match]["trend_score"] = min(100, merged[url_match]["trend_score"] + 3)
             continue
-        
+
         # Check fuzzy title match
         title_match = None
         for st_title, st_idx in seen_titles:
             if fuzzy_title_match(title, st_title):
                 title_match = st_idx
                 break
-        
+
         if title_match is not None:
             existing = merged[title_match]
             if opp["trend_score"] > existing["trend_score"]:
@@ -1206,10 +1210,10 @@ def deduplicate_cross_source(opportunities: List[Dict[str, Any]]) -> List[Dict[s
                 existing["notes"] = f"Cross-source: {existing['source']}, {opp['source']} | {existing.get('notes', '')}"
             merged[title_match]["trend_score"] = min(100, merged[title_match]["trend_score"] + 3)
             continue
-        
+
         seen_titles.append((title, len(merged)))
         merged.append(opp.copy())
-    
+
     dupes_removed = len(opportunities) - len(merged)
     if dupes_removed > 0:
         print(f"  Deduplication: merged {dupes_removed} cross-source duplicates")
@@ -1218,12 +1222,12 @@ def deduplicate_cross_source(opportunities: List[Dict[str, Any]]) -> List[Dict[s
 
 def compute_score_deltas(opportunities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Compare current scores with previous run to compute deltas.
-    
+
     Adds 'score_delta' and 'trend_direction' fields.
     """
     history_file = OUTPUT_DIR / "money_opportunities.csv"
     prev_scores = {}
-    
+
     if history_file.exists():
         try:
             with open(history_file, "r") as f:
@@ -1235,7 +1239,7 @@ def compute_score_deltas(opportunities: List[Dict[str, Any]]) -> List[Dict[str, 
                         prev_scores[title] = score
         except Exception:
             pass
-    
+
     for opp in opportunities:
         title = opp.get("title", "")
         current = opp.get("trend_score", 0)
@@ -1248,28 +1252,28 @@ def compute_score_deltas(opportunities: List[Dict[str, Any]]) -> List[Dict[str, 
             opp["trend_direction"] = "falling"
         else:
             opp["trend_direction"] = "stable"
-    
+
     rising = sum(1 for o in opportunities if o.get("trend_direction") == "rising")
     falling = sum(1 for o in opportunities if o.get("trend_direction") == "falling")
     if rising or falling:
         print(f"  Score deltas: {rising} rising, {falling} falling, {len(opportunities) - rising - falling} stable")
-    
+
     return opportunities
 
 
 # ── Telegram Daily Digest (Action Layer) ────────────────────────
 def send_telegram_digest(opportunities: List[Dict[str, Any]], new_count: int):
     """Send daily top-3 opportunities digest to Telegram.
-    
+
     Uses TELEGRAM_TRADING_BOT_TOKEN + TELEGRAM_CHAT_ID.
     """
     bot_token = os.environ.get("TELEGRAM_TRADING_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    
+
     if not bot_token or not chat_id:
         print("  Warning: Telegram credentials not set, skipping digest")
         return False
-    
+
     # Pick top 3 by score, one per category if possible
     seen_cats = set()
     top3 = []
@@ -1287,14 +1291,14 @@ def send_telegram_digest(opportunities: List[Dict[str, Any]], new_count: int):
                 top3.append(opp)
                 if len(top3) >= 3:
                     break
-    
+
     if not top3:
         print("  No opportunities worth digesting")
         return False
-    
+
     today = datetime.now().strftime("%Y-%m-%d")
     lines = [f"💰 *Daily Opportunity Digest* ({today})", f"Total: {len(opportunities)} | New: {new_count}", ""]
-    
+
     for i, opp in enumerate(top3, 1):
         score = opp.get("trend_score", 0)
         title = opp.get("title", "?")[:60]
@@ -1303,20 +1307,20 @@ def send_telegram_digest(opportunities: List[Dict[str, Any]], new_count: int):
         delta = opp.get("score_delta", 0)
         direction = opp.get("trend_direction", "stable")
         url = opp.get("url", "")
-        
+
         arrow = "🔺" if direction == "rising" else ("🔻" if direction == "falling" else "➖")
         delta_str = f"{arrow} {'+' if delta > 0 else ''}{delta}" if delta else ""
-        
+
         lines.append(f"*{i}. [{score}]{delta_str} {title}*")
         lines.append(f"   📂 {cat} | 📡 {source}")
         if url:
             lines.append(f"   🔗 {url}")
         lines.append("")
-    
+
     lines.append("_Run: python3 domains/product/engineering/book-dev/book-scraping/opportunities/scrape_money_opportunities.py_")
-    
+
     message = "\n".join(lines)
-    
+
     try:
         resp = httpx.post(
             f"https://api.telegram.org/bot{bot_token}/sendMessage",
@@ -1355,7 +1359,7 @@ def send_telegram_digest(opportunities: List[Dict[str, Any]], new_count: int):
 # ── Todoist Integration ─────────────────────────────────────────
 def push_to_todoist(opportunities: List[Dict[str, Any]]) -> int:
     """Push high-score opportunities (≥85) to Todoist as actionable tasks.
-    
+
     Creates tasks in the '💼 Income' project with tags for category and source.
     Returns count of tasks created.
     """
@@ -1363,22 +1367,22 @@ def push_to_todoist(opportunities: List[Dict[str, Any]]) -> int:
     if not token:
         print("  Warning: TODOIST_API_TOKEN not set, skipping Todoist sync")
         return 0
-    
+
     # Filter high-score opportunities
     high_value = [o for o in opportunities if o.get("trend_score", 0) >= 85]
     if not high_value:
         print("  No opportunities with score ≥85 for Todoist")
         return 0
-    
+
     # Limit to top 5 to avoid spam
     high_value = high_value[:5]
-    
+
     base_url = "https://api.todoist.com/api/v1"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
-    
+
     created = 0
     for opp in high_value:
         title = opp.get("title", "?")[:80]
@@ -1387,11 +1391,11 @@ def push_to_todoist(opportunities: List[Dict[str, Any]]) -> int:
         source = opp.get("source", "unknown")
         url = opp.get("url", "")
         notes = opp.get("notes", "")
-        
+
         # Build task content
         content = f"💰 [{score}] {title}"
         description = f"Category: {category}\nSource: {source}\nScore: {score}\n\n{notes}\n\n{url}"
-        
+
         # Create task via API
         payload = {
             "content": content,
@@ -1399,7 +1403,7 @@ def push_to_todoist(opportunities: List[Dict[str, Any]]) -> int:
             "labels": ["opportunity", category.lower().replace(" ", "-")[:20]],
             "priority": 4 if score >= 95 else 3,  # P1 if ≥95, P2 if ≥85
         }
-        
+
         try:
             resp = httpx.post(
                 f"{base_url}/tasks",
@@ -1413,7 +1417,7 @@ def push_to_todoist(opportunities: List[Dict[str, Any]]) -> int:
                 print(f"  Warning: Todoist task creation failed: {resp.status_code}")
         except Exception as e:
             print(f"  Warning: Todoist API error: {e}")
-    
+
     print(f"  Created {created} Todoist tasks from high-score opportunities")
     return created
 
@@ -1426,15 +1430,15 @@ def setup_cron():
     python_path = sys.executable
     cron_cmd = f"0 10 * * * cd {ROOT} && {python_path} {script_path} --sources hn,github,firecrawl-search,etsy,ebay,tiktok,amazon,tcg-prices,etsy-sold,amazon-bsr --min-score 60 --send-digest --push-todoist >> {OUTPUT_DIR}/cron.log 2>&1"
     cron_marker = "scrape_money_opportunities"
-    
+
     try:
         result = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
         current_cron = result.stdout if result.returncode == 0 else ""
-        
+
         if cron_marker in current_cron:
             print("  Cron job already configured")
             return
-        
+
         new_cron = current_cron.rstrip("\n") + f"\n{cron_cmd}\n"
         proc = subprocess.run(["crontab", "-"], input=new_cron, capture_output=True, text=True)
         if proc.returncode == 0:
@@ -1532,13 +1536,13 @@ def main():
         init_action_tracker()
         track_action(url, action, notes=notes)
         return
-    
+
     if args.track_revenue:
         url, actual, expected = args.track_revenue
         init_action_tracker()
         track_revenue(url, actual=float(actual), expected=float(expected))
         return
-    
+
     if args.list_actions:
         filter_val = args.list_actions if args.list_actions != "all" else None
         list_actions(filter_val)
@@ -1568,7 +1572,7 @@ def main():
             continue
         name, scraper_fn = source_info
         print(f"\n  Scraping {name}...")
-        
+
         # Track source health with timing and error handling
         start_time = time.time()
         try:
@@ -1616,7 +1620,7 @@ def main():
     save_opportunities(unique_opportunities)
     append_history(unique_opportunities)
     save_to_db(unique_opportunities)
-    
+
     # Auto-track high-score opportunities (≥85) as 'monitor'
     high_score_opps = [o for o in unique_opportunities if o.get('trend_score', 0) >= 85]
     if high_score_opps and init_action_tracker():
@@ -1636,7 +1640,7 @@ def main():
                 tracked += 1
         if tracked:
             print(f"  Auto-tracked {tracked} high-score opportunities as 'monitor'")
-    
+
     # Save and print source health report
     if health_records:
         save_source_health(health_records)
