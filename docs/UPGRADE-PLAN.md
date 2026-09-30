@@ -2,10 +2,10 @@
 
 ## Current state
 
-Score: **4/10** (was 1/10) — every script now imports and runs from a
-standalone clone, core scoring logic is tested, lint/CI exist. Still a loose
-bag of scripts with browser-UA/search-engine scraping and one PII-harvesting
-script.
+Score: **4.5/10** (pass 1: 1 -> 4; pass 2: 4 -> 4.5) — every script runs
+from a standalone clone; scoring and the HN / GitHub / DeFiLlama JSON sources
+are fixture-tested; lint/CI exist. Still a loose bag of scripts with
+browser-UA/search-engine scraping and one PII-harvesting script.
 
 ## Backlog
 
@@ -16,13 +16,14 @@ script.
   basis under PDPA. Until then do not schedule it.
 
 ### P1
-- Add a shared `http_client.py` (identifying UA, timeout, bounded retry on
-  429/5xx, per-host delay) and route all scripts through it; tested pattern
-  exists in `book-restaurant-scraping/restaurants/http.py`.
+- Add a shared `http_client.py` (timeout, bounded retry on 429/5xx, per-host
+  delay) and route all scripts through it; tested pattern exists in
+  `book-restaurant-scraping/restaurants/http.py`. Owner decision needed first
+  on the browser `User-Agent` the live scripts send (kept unchanged so far).
 - Replace search-engine HTML scraping (DDG/Bing/Brave/Google) with official
   APIs or drop those sources.
-- Add fixture tests for each parser (`scrape_hackernews`, GitHub trending,
-  DeFi/crypto JSON) using saved responses under `tests/fixtures/`.
+- Remaining fixture tests: crypto (CoinGecko) and FX JSON, `parse_producthunt`
+  / `parse_taft` / `parse_skyscanner` markdown parsers.
 - Split `opportunities/scrape_money_opportunities.py` (1.8k lines) into
   sources / scoring / outputs modules.
 
@@ -32,7 +33,7 @@ script.
 - `setup_cron()` in the money script writes to crontab directly; replace with
   a reviewed `setup_cron.sh plan|install` like the sibling scraper repos.
 
-## Done in this pass
+## Done in this pass (pass 1)
 - Fixed monorepo `parents[4]` path lookups (IndexError on import in 8
   scripts) and the hard `db_connect` import; outputs now go to repo `data/`.
 - `scrape_flight_prices.py` now actually parses its documented CLI flags
@@ -45,3 +46,14 @@ script.
 - Removed runtime `pip install`; added `requirements.txt`, ruff, pytest
   config, 14 offline tests, CI; untracked committed runtime data, `cron.log`
   (contained a local home path) and `__pycache__`.
+
+## Done in this pass (pass 2)
+- Fixture-replay tests (`tests/test_source_parsers.py`, `tests/fixtures/*.json`)
+  for `scrape_hackernews`, `scrape_github_trending` and the DeFiLlama pool
+  filter / stablecoin / opportunity detection, including HTTP-failure paths
+  (14 -> 22 tests).
+- Fixed a crash: `detect_stablecoin_pools` raised `AttributeError` on a pool
+  whose `symbol` is JSON `null`.
+- GitHub trending note no longer claims "stars today" (it is total stars on a
+  repo created in the last 7 days).
+- `scrape_fb_local.py` untouched pending the owner decision (P0).

@@ -1,0 +1,8 @@
+{
+  "total_count": 3,
+  "items": [
+    {"full_name": "acme/agent-kit", "description": "LLM agent toolkit", "stargazers_count": 250, "html_url": "https://github.com/acme/agent-kit", "topics": ["ai", "agents"]},
+    {"full_name": "acme/dotfiles", "description": "My personal config said to be neat", "stargazers_count": 90, "html_url": "https://github.com/acme/dotfiles", "topics": []},
+    {"full_name": "acme/shop-scraper", "description": null, "stargazers_count": 12, "html_url": "https://github.com/acme/shop-scraper", "topics": ["ecommerce"]}
+  ]
+}

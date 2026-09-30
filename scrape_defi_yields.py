@@ -82,7 +82,7 @@ def detect_stablecoin_pools(pools: list) -> list:
     """Find high-yield stablecoin pools."""
     stable_pools = []
     for pool in pools:
-        symbol = pool.get("symbol", "").upper()
+        symbol = str(pool.get("symbol") or "").upper()
         for sc in STABLECOINS:
             if sc in symbol:
                 apy = pool.get("apy", 0) or 0

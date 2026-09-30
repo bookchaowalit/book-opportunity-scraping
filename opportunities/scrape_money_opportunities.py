@@ -400,7 +400,7 @@ def scrape_github_trending() -> List[Dict[str, Any]]:
                     "url": url,
                     "trend_score": min(90, 50 + stars // 5),
                     "competition_level": "low",
-                    "notes": f"New repo with {stars} stars today",
+                    "notes": f"Repo created in the last 7 days with {stars} stars",
                 })
 
         print(f"    Found {len(opportunities)} GitHub trending repos")

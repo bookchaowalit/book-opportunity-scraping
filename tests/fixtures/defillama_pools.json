@@ -1,0 +1,11 @@
+{
+  "status": "success",
+  "data": [
+    {"pool": "p-stable", "chain": "Ethereum", "project": "aave", "symbol": "USDC", "tvlUsd": 5000000, "apy": 8.2, "category": "Lending"},
+    {"pool": "p-new", "chain": "Arbitrum", "project": "gmx", "symbol": "GLP", "tvlUsd": 900000, "apy": 25.0, "category": "Derivatives"},
+    {"pool": "p-small", "chain": "Ethereum", "project": "tiny", "symbol": "DAI-USDT", "tvlUsd": 5000, "apy": 40.0, "category": "Dexs"},
+    {"pool": "p-rug", "chain": "Ethereum", "project": "rug", "symbol": "SCAM", "tvlUsd": 2000000, "apy": 5000.0, "category": "Dexs"},
+    {"pool": "p-null", "chain": "Ethereum", "project": "odd", "symbol": null, "tvlUsd": null, "apy": null, "category": "Dexs"},
+    {"pool": "p-spike", "chain": "Ethereum", "project": "curve", "symbol": "FRAX-USDC", "tvlUsd": 3000000, "apy": 18.0, "category": "Dexs"}
+  ]
+}
