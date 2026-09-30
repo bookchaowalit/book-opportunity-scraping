@@ -1,0 +1,8 @@
+{
+  "bitcoin": {"usd": 64000.5, "usd_24h_change": -6.2, "usd_24h_vol": 3.1e10, "usd_market_cap": 1.26e12,
+              "thb": 2150000, "thb_24h_change": -6.0, "thb_24h_vol": 1.0e12, "thb_market_cap": 4.2e13,
+              "last_updated_at": 1790000000},
+  "ethereum": {"usd": 2500, "usd_24h_change": 1.25, "usd_24h_vol": 1.2e10, "usd_market_cap": 3.0e11,
+               "thb": 84000, "thb_24h_change": null, "thb_24h_vol": 4.0e11, "thb_market_cap": 1.0e13},
+  "unknown-coin": {}
+}

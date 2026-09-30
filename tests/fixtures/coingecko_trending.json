@@ -1,0 +1,10 @@
+{
+  "coins": [
+    {"item": {"id": "pepe", "name": "Pepe", "symbol": "PEPE", "market_cap_rank": 30, "score": 0}},
+    {"item": {"id": "newcoin", "name": "New Coin", "symbol": "NEW", "market_cap_rank": null, "score": 1}},
+    {"item": {"name": "No id"}},
+    {"not_item": true},
+    "junk"
+  ],
+  "nfts": []
+}

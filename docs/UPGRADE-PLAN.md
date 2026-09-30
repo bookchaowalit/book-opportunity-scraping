@@ -2,7 +2,7 @@
 
 ## Current state
 
-Score: **4.5/10** (pass 1: 1 -> 4; pass 2: 4 -> 4.5) — every script runs
+Score: **5/10** (pass 1: 1 -> 4; pass 2: 4 -> 4.5; pass 3: 4.5 -> 5) — every script runs
 from a standalone clone; scoring and the HN / GitHub / DeFiLlama JSON sources
 are fixture-tested; lint/CI exist. Still a loose bag of scripts with
 browser-UA/search-engine scraping and one PII-harvesting script.
@@ -22,8 +22,13 @@ browser-UA/search-engine scraping and one PII-harvesting script.
   on the browser `User-Agent` the live scripts send (kept unchanged so far).
 - Replace search-engine HTML scraping (DDG/Bing/Brave/Google) with official
   APIs or drop those sources.
-- Remaining fixture tests: crypto (CoinGecko) and FX JSON, `parse_producthunt`
-  / `parse_taft` / `parse_skyscanner` markdown parsers.
+- Fixture tests still missing: `scrape_stock_prices.py`,
+  `scrape_seo_rankings.py`, `scrape_defi_yields.py` output writers.
+- `scrape_flight_prices.main` drops Skyscanner fares >= 9,999 THB
+  (`priced` filter) so long-haul routes never record a price; confirm the
+  intent and replace with a per-route sanity band.
+- Route the remaining `open(..., "w"/"a")` writers (stocks, SEO, DeFi, money
+  script) through `atomic_io.py`.
 - Split `opportunities/scrape_money_opportunities.py` (1.8k lines) into
   sources / scoring / outputs modules.
 
@@ -57,3 +62,20 @@ browser-UA/search-engine scraping and one PII-harvesting script.
 - GitHub trending note no longer claims "stars today" (it is total stars on a
   repo created in the last 7 days).
 - `scrape_fb_local.py` untouched pending the owner decision (P0).
+
+## Done in this pass (pass 3)
+- `atomic_io.py`: crypto, FX, flight and AI-tool snapshots/histories written
+  atomically (history = atomic rewrite of old + new, no torn rows).
+- Fixed alerts that could never fire: `scrape_flight_prices.main` read the
+  "previous" price after appending this run, and `scrape_ai_tools.main` read
+  "seen" URLs after appending (new `persist_tools()`); both now read first.
+- Fixed `parse_skyscanner` crash on a bare `฿,` (`int("")`); ProductHunt/TAAFT
+  parsers dedupe repeated links. CoinGecko trending tolerates partial entries
+  (`parse_trending`); Frankfurter payloads normalised (`parse_latest`,
+  `parse_history`, non-numeric rates dropped); FX history skips duplicate
+  `(date, base, currency)` rows.
+- CLI validation before any request: crypto ids/currencies (dedupe, max 50),
+  FX ISO codes (base excluded from symbols), non-negative thresholds, flight
+  `--days-ahead` 1-180 and `--alert-drop-pct` (0, 100].
+- 7 new fixtures + `tests/test_market_sources.py` (22 -> 47 tests incl.
+  parametrised). User-Agent and `scrape_fb_local.py` untouched (owner P0/P1).

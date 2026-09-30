@@ -43,6 +43,13 @@ except ImportError:
     sys.exit(1)
 
 ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from atomic_io import append_csv_atomic, render_csv, write_text_atomic  # noqa: E402
+
+FLIGHT_FIELDS = ["origin", "destination", "price_thb", "airline", "departure", "return",
+                 "duration_hours", "stops", "url", "source", "scraped_at"]
 OUTPUT_DIR = ROOT / "data" / "book-travel"
 
 TEQUILA_API_KEY = os.environ.get("TEQUILA_API_KEY", "")
@@ -342,9 +349,10 @@ def parse_skyscanner(markdown: str, origin: str, destination: str) -> list:
     import re
     flights = []
     # Look for price patterns like ฿5,990 or $199 or THB 5,990
-    price_matches = re.findall(r'(?:฿|THB\s*|฿)([\d,]+)', markdown)
+    # Require a leading digit: a bare "฿," used to crash int("").
+    price_matches = re.findall(r'(?:฿|THB)\s*(\d[\d,]*)', markdown)
     if price_matches:
-        prices = [int(p.replace(",", "")) for p in price_matches if int(p.replace(",", "")) > 500]
+        prices = [value for value in (int(p.replace(",", "")) for p in price_matches) if value > 500]
         if prices:
             flights.append({
                 "origin": origin,
@@ -366,7 +374,7 @@ def load_previous_prices() -> dict:
     history_file = OUTPUT_DIR / "flight_prices_history.csv"
     prices = {}
     if history_file.exists():
-        with open(history_file, "r") as f:
+        with open(history_file, "r", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
                 key = f"{row.get('origin', '')}-{row.get('destination', '')}"
@@ -378,32 +386,18 @@ def load_previous_prices() -> dict:
 
 
 def save_prices(flights: list):
-    """Save latest price snapshot."""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    """Save latest price snapshot (written atomically)."""
     filepath = OUTPUT_DIR / "flight_prices.csv"
-    fieldnames = ["origin", "destination", "price_thb", "airline", "departure", "return",
-                  "duration_hours", "stops", "url", "source", "scraped_at"]
-    with open(filepath, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for flight in flights:
-            writer.writerow({**flight, "scraped_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    write_text_atomic(filepath, render_csv(({**flight, "scraped_at": now} for flight in flights), FLIGHT_FIELDS))
     print(f"  Saved {len(flights)} flights to {filepath}")
 
 
 def append_history(flights: list):
-    """Append to history CSV."""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    """Append to history CSV (old + new rewritten atomically)."""
     filepath = OUTPUT_DIR / "flight_prices_history.csv"
-    fieldnames = ["origin", "destination", "price_thb", "airline", "departure", "return",
-                  "duration_hours", "stops", "url", "source", "scraped_at"]
-    file_exists = filepath.exists()
-    with open(filepath, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if not file_exists:
-            writer.writeheader()
-        for flight in flights:
-            writer.writerow({**flight, "scraped_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    append_csv_atomic(filepath, ({**flight, "scraped_at": now} for flight in flights), FLIGHT_FIELDS)
     print(f"  Appended {len(flights)} rows to {filepath}")
 
 
@@ -505,11 +499,13 @@ def main(routes=None, origin="BKK", days_ahead=30, alert_drop_pct=15.0, no_histo
         print("\n  WARNING: No flight data fetched.")
         return
 
+    # Read the previous prices *before* appending this run; otherwise the
+    # "previous" price is the current one and no drop/increase ever alerts.
+    prev_prices = load_previous_prices()
     save_prices(all_flights)
     if not no_history:
         append_history(all_flights)
 
-    prev_prices = load_previous_prices()
     print_alerts(all_flights, prev_prices, alert_drop_pct)
 
     print(f"\n  Total: {len(all_flights)} routes tracked")
@@ -521,11 +517,15 @@ def cli(argv=None):
     parser.add_argument("--routes", help="Comma-separated ORIG-DEST pairs, e.g. BKK-SIN,BKK-TYO")
     parser.add_argument("--origin", default="BKK", help="Origin used with --destinations (default: BKK)")
     parser.add_argument("--destinations", help="Comma-separated destinations for --origin")
-    parser.add_argument("--days-ahead", type=int, default=30)
-    parser.add_argument("--alert-drop-pct", type=float, default=15.0)
+    parser.add_argument("--days-ahead", type=int, default=30, help="Search window in days (1-180)")
+    parser.add_argument("--alert-drop-pct", type=float, default=15.0, help="Alert threshold %% (0-100]")
     parser.add_argument("--no-history", action="store_true")
     parser.add_argument("--output-dir", default=None, help=f"Output directory (default: {OUTPUT_DIR})")
     args = parser.parse_args(argv)
+    if not 1 <= args.days_ahead <= 180:
+        parser.error("--days-ahead must be from 1 to 180")
+    if not 0 < args.alert_drop_pct <= 100:
+        parser.error("--alert-drop-pct must be greater than 0 and at most 100")
     routes = parse_routes(args.routes, args.origin, args.destinations)
     if not routes:
         parser.error("no valid routes; use ORIG-DEST pairs")

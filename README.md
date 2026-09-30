@@ -60,8 +60,16 @@ ruff check .
 python -m pytest -q
 ```
 
-Tests cover scoring, keyword matching, dedupe, route parsing and e-mail
-masking without network access; CI (`.github/workflows/ci.yml`) runs them.
+Tests cover scoring, keyword matching, dedupe, route parsing, e-mail
+masking, and fixture replays of HN, GitHub, DeFiLlama, CoinGecko, Frankfurter
+and the ProductHunt / TAAFT / Skyscanner markdown parsers, all without network
+access; CI (`.github/workflows/ci.yml`) runs them.
+
+The crypto, FX, flight and AI-tool scripts write their CSV snapshots and
+histories atomically (`atomic_io.py`: temp file + fsync + `os.replace`), so a
+killed cron run never leaves a truncated file. FX history skips duplicate
+`(date, base, currency)` rows, and the crypto/FX/flight CLIs validate ids,
+currency codes and thresholds before any request.
 
 ## Boundaries
 
