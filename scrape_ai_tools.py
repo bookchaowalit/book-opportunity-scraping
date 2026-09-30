@@ -21,6 +21,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 try:
     from dotenv import load_dotenv
@@ -69,6 +70,19 @@ OPPORTUNITY_KEYWORDS = [
 ]
 
 DEFAULT_CATEGORIES = ["ai", "developer-tools", "productivity", "automation"]
+
+
+def host_matches(url: str, domain: str) -> bool:
+    """True when ``url``'s host is ``domain`` or a subdomain of it.
+
+    A substring test (``domain in url``) also accepted lookalike hosts and
+    any URL that merely mentions the domain in its path or query string.
+    """
+    try:
+        host = (urlsplit(str(url)).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return host == domain or host.endswith("." + domain)
 
 
 def _is_valid_url(url: str) -> bool:
@@ -396,7 +410,7 @@ def _brave_producthunt() -> list:
     tools = []
     for r in results:
         url = r.get("url", "")
-        if "producthunt.com" in url and _is_valid_url(url):
+        if host_matches(url, "producthunt.com") and _is_valid_url(url):
             # Extract clean name from URL slug (most reliable)
             name = _name_from_ph_url(url)
             if not name:
@@ -441,7 +455,7 @@ def _brave_taft() -> list:
     tools = []
     for r in results:
         url = r.get("url", "")
-        if "theresanaiforthat.com" in url and _is_valid_url(url):
+        if host_matches(url, "theresanaiforthat.com") and _is_valid_url(url):
             # Extract clean name from URL slug
             name = _name_from_taft_url(url)
             if not name:

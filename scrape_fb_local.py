@@ -16,7 +16,7 @@ import os
 import re
 import time
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -90,7 +90,7 @@ def search_bing(query: str, max_results: int = 10) -> list:
             snippet = snippet_el.get_text(strip=True) if snippet_el else ''
             
             # Only keep Facebook results
-            if 'facebook.com' in link:
+            if host_matches(link, 'facebook.com'):
                 results.append((title, link, snippet))
                 
                 if len(results) >= max_results:
@@ -125,7 +125,7 @@ def search_duckduckgo(query: str, max_results: int = 10) -> list:
             snippet = snippet_el.get_text(strip=True) if snippet_el else ''
             
             # Only keep Facebook results
-            if 'facebook.com' in link:
+            if host_matches(link, 'facebook.com'):
                 results.append((title, link, snippet))
                 
                 if len(results) >= max_results:
@@ -160,10 +160,23 @@ def search_google(query: str, page: int = 0) -> list:
             snippet = snippet_el.get_text(strip=True) if snippet_el else ''
             
             # Only keep Facebook results
-            if 'facebook.com' in link:
+            if host_matches(link, 'facebook.com'):
                 results.append((title, link, snippet))
     
     return results
+
+
+def host_matches(url: str, domain: str) -> bool:
+    """True when ``url``'s host is ``domain`` or a subdomain of it.
+
+    A substring test (``domain in url``) also accepted lookalike hosts and
+    any URL that merely mentions the domain in its path or query string.
+    """
+    try:
+        host = (urlsplit(str(url)).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return host == domain or host.endswith("." + domain)
 
 
 def extract_emails_from_text(text: str) -> list:
@@ -254,7 +267,7 @@ def scrape_fb_groups(max_results_per_query: int = 10) -> dict:
                 emails = extract_emails_from_text(snippet)
                 
                 # If no email in snippet, try to fetch post content
-                if not emails and 'facebook.com' in url:
+                if not emails and host_matches(url, 'facebook.com'):
                     print(f"      Fetching post content for {company}...")
                     content = fetch_fb_post_content(url)
                     if content:

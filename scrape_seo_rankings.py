@@ -21,6 +21,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 try:
     from dotenv import load_dotenv
@@ -67,6 +68,20 @@ DEFAULT_DOMAINS = [
     "bookchaowalit.com",
     "chaowalit.com",
 ]
+
+
+def host_matches(url: str, domain: str) -> bool:
+    """True when ``url``'s host is ``domain`` or a subdomain of it.
+
+    A substring test (``domain in url``) also accepted lookalike hosts and
+    any URL that merely mentions the domain in its path or query string.
+    """
+    domain = str(domain).strip().lower().rstrip(".")
+    try:
+        host = (urlsplit(str(url)).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return bool(domain) and (host == domain or host.endswith("." + domain))
 
 
 def _firecrawl_search(query: str, limit: int = 20) -> list:
@@ -125,7 +140,7 @@ def google_search(query: str, limit: int = 20) -> list:
             else:
                 url = href
             # Skip Google's own links
-            if 'google.com' in url or 'youtube.com' in url:
+            if host_matches(url, 'google.com') or host_matches(url, 'youtube.com'):
                 continue
             title = a_tag.get_text(strip=True)
             if title and len(title) > 3:
@@ -167,7 +182,7 @@ def check_ranking(keyword: str, target_domains: list, limit: int = 20) -> dict:
         title = result.get("title", "")
 
         for domain in target_domains:
-            if domain.lower() in url.lower():
+            if host_matches(url, domain):
                 rankings["found"] = True
                 rankings["all_positions"].append({
                     "rank": i,

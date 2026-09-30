@@ -10,10 +10,15 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import scrape_ai_tools  # noqa: E402
 import scrape_defi_yields  # noqa: E402
 import scrape_fb_local  # noqa: E402
 import scrape_flight_prices  # noqa: E402
+import scrape_seo_rankings  # noqa: E402
 import scrape_stock_prices  # noqa: E402
+
+sys.path.insert(0, str(ROOT / "opportunities"))
+import scrape_money_opportunities as money  # noqa: E402
 
 
 class _Resp:
@@ -98,6 +103,60 @@ class EmailOrderTests(unittest.TestCase):
             scrape_fb_local.extract_emails_from_text(text),
             [f"person{i}@company{i}.co" for i in range(20)],
         )
+
+
+SPOOFS = [
+    "https://evil.example/redirect?to={d}",
+    "https://{d}.evil.example/x",
+    "https://not{d}/x",
+]
+
+
+class HostMatchTests(unittest.TestCase):
+    def test_host_matches_rejects_substring_lookalikes(self):
+        for mod in (scrape_ai_tools, scrape_fb_local, scrape_seo_rankings, money):
+            for domain in ("producthunt.com", "facebook.com"):
+                self.assertTrue(mod.host_matches(f"https://www.{domain}/p/1", domain), mod.__name__)
+                self.assertTrue(mod.host_matches(f"https://{domain}", domain), mod.__name__)
+                for spoof in SPOOFS:
+                    self.assertFalse(mod.host_matches(spoof.format(d=domain), domain), (mod.__name__, spoof))
+
+    def test_seo_rank_counts_only_the_target_host(self):
+        results = [
+            {"url": "https://evil.example/?u=bookchaowalit.com", "title": "spoof"},
+            {"url": "https://www.google.com/search?q=bookchaowalit.com", "title": "google"},
+            {"url": "https://www.bookchaowalit.com/about", "title": "real"},
+        ]
+        with patch.object(scrape_seo_rankings, "google_search", return_value=results):
+            ranking = scrape_seo_rankings.check_ranking("book", ["bookchaowalit.com"])
+        self.assertEqual(ranking["best_rank"], 3)
+        self.assertEqual([p["rank"] for p in ranking["all_positions"]], [3])
+
+    def test_producthunt_search_keeps_only_producthunt_hosts(self):
+        results = [
+            {"title": "Spoof", "url": "https://evil.example/producthunt.com/posts/x"},
+            {"title": "Real", "url": "https://www.producthunt.com/posts/real"},
+        ]
+        with patch.object(money, "ddg_search", return_value=results), patch("builtins.print"):
+            found = money.scrape_producthunt_rss()
+        self.assertEqual([o["title"] for o in found], ["Real"])
+
+    def test_fb_search_keeps_only_facebook_links(self):
+        html = (
+            '<li class="b_algo"><h2><a href="https://evil.example/?next=facebook.com">Spoof</a></h2><p>x</p></li>'
+            '<li class="b_algo"><h2><a href="https://www.facebook.com/groups/1/posts/2">Real</a></h2><p>y</p></li>'
+        )
+
+        class _HtmlResp:
+            status_code = 200
+            text = html
+
+            def raise_for_status(self):
+                return None
+
+        with patch.object(scrape_fb_local.requests, "get", return_value=_HtmlResp()):
+            found = scrape_fb_local.search_bing("q")
+        self.assertEqual([t for t, _link, _s in found], ["Real"])
 
 
 if __name__ == "__main__":

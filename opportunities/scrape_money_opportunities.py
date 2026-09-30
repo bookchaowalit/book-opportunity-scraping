@@ -40,6 +40,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import List, Dict, Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -106,6 +107,19 @@ HEADERS = {
 
 # ── Keyword matching ────────────────────────────────────────────
 _WORD_CACHE: Dict[str, "re.Pattern[str]"] = {}
+
+
+def host_matches(url: str, domain: str) -> bool:
+    """True when ``url``'s host is ``domain`` or a subdomain of it.
+
+    A substring test (``domain in url``) also accepted lookalike hosts and
+    any URL that merely mentions the domain in its path or query string.
+    """
+    try:
+        host = (urlsplit(str(url)).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return host == domain or host.endswith("." + domain)
 
 
 def has_keyword(text: str, keywords) -> bool:
@@ -278,7 +292,7 @@ def scrape_reddit_rss() -> List[Dict[str, Any]]:
             title = r.get("title", "")
             url = r.get("url", "")
             snippet = r.get("description", "")
-            if title and "reddit.com" in url:
+            if title and host_matches(url, "reddit.com"):
                 score = 70
                 title_lower = title.lower()
                 if any(kw in title_lower for kw in ["money", "income", "profit", "sell", "revenue"]):
@@ -463,7 +477,7 @@ def scrape_etsy_firecrawl() -> List[Dict[str, Any]]:
         for r in results:
             title = r.get("title", "")
             url = r.get("url", "")
-            if title and "etsy.com" in url:
+            if title and host_matches(url, "etsy.com"):
                 opportunities.append({
                     "title": title[:120],
                     "category": "digital-products",
@@ -493,7 +507,7 @@ def scrape_ebay_firecrawl() -> List[Dict[str, Any]]:
         for r in results:
             title = r.get("title", "")
             url = r.get("url", "")
-            if title and "ebay.com" in url:
+            if title and host_matches(url, "ebay.com"):
                 import re
                 price = ""
                 price_match = re.search(r'\$[\d,]+\.?\d*', title)
@@ -523,7 +537,7 @@ def scrape_producthunt_rss() -> List[Dict[str, Any]]:
         title = r.get("title", "")
         url = r.get("url", "")
         desc = r.get("description", "")
-        if title and "producthunt.com" in url:
+        if title and host_matches(url, "producthunt.com"):
             opportunities.append({
                 "title": title[:120],
                 "category": "ai-content",
@@ -1152,7 +1166,7 @@ def scrape_etsy_sold() -> List[Dict[str, Any]]:
             title = r.get("title", "")
             url = r.get("url", "")
             desc = r.get("description", "")
-            if title and "etsy.com" in url:
+            if title and host_matches(url, "etsy.com"):
                 import re
                 price = ""
                 price_match = re.search(r'\$[\d,]+\.?\d*', title + " " + desc)

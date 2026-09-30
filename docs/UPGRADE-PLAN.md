@@ -89,3 +89,8 @@ browser-UA/search-engine scraping and one PII-harvesting script.
   was replaced by a dict holding only the opportunities section, wiping the
   other scrapers' sections) and the update is written atomically
   (`tests/test_dashboard_merge.py`).
+- Host matching: SEO `check_ranking` counts a result only when its host is
+  the target domain or a subdomain (a substring of the URL counted spoofed
+  and query-string mentions), and the Google/YouTube exclusion, the
+  Reddit/Etsy/eBay/ProductHunt/TAAFT result filters and the Facebook
+  filter (which also decided which URLs get fetched) use `host_matches`.
