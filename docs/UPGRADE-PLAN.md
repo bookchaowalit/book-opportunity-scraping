@@ -85,3 +85,7 @@ browser-UA/search-engine scraping and one PII-harvesting script.
   host-local time; flight `airline` keeps route order (was set order, so
   the column changed between identical runs); `scrape_fb_local` email
   extraction keeps first-seen order (`emails[0]` depended on set order).
+- Shared `scraper_dashboard.json`: an unreadable file is left untouched (it
+  was replaced by a dict holding only the opportunities section, wiping the
+  other scrapers' sections) and the update is written atomically
+  (`tests/test_dashboard_merge.py`).

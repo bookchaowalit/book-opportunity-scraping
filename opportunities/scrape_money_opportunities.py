@@ -761,14 +761,19 @@ def generate_dashboard_json(health_records: List[Dict[str, Any]], opportunities:
     """
     dashboard_path = ROOT / "data" / "briefings" / "scraper_dashboard.json"
 
-    # Load existing dashboard
+    # Load existing dashboard. It is shared with the other scrapers: if it
+    # cannot be read, skip this update rather than write a fresh dict over
+    # every other source's section.
     dashboard = {}
     if dashboard_path.exists():
         try:
-            with open(dashboard_path) as f:
-                dashboard = json.load(f)
-        except Exception:
-            dashboard = {}
+            dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print(f"  WARNING: {dashboard_path.name} unreadable ({e}); not overwriting it")
+            return
+        if not isinstance(dashboard, dict):
+            print(f"  WARNING: {dashboard_path.name} is not a JSON object; not overwriting it")
+            return
 
     # Ensure 'sources' key exists
     if "sources" not in dashboard:
@@ -808,9 +813,11 @@ def generate_dashboard_json(health_records: List[Dict[str, Any]], opportunities:
     dashboard["generated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Save
+    # Atomic replace, so a concurrent reader never sees a half-written file.
     dashboard_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(dashboard_path, 'w') as f:
-        json.dump(dashboard, f, indent=2)
+    tmp_path = dashboard_path.with_name(f".{dashboard_path.name}.{os.getpid()}.tmp")
+    tmp_path.write_text(json.dumps(dashboard, indent=2), encoding="utf-8")
+    os.replace(tmp_path, dashboard_path)
     print(f"  Dashboard updated: {dashboard_path.name}")
 
 
