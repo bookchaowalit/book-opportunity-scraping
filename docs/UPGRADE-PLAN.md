@@ -79,3 +79,9 @@ browser-UA/search-engine scraping and one PII-harvesting script.
   `--days-ahead` 1-180 and `--alert-drop-pct` (0, 100].
 - 7 new fixtures + `tests/test_market_sources.py` (22 -> 47 tests incl.
   parametrised). User-Agent and `scrape_fb_local.py` untouched (owner P0/P1).
+- Bug-pattern sweep (`tests/test_bug_pattern_sweep.py`, 4 tests): DeFi
+  `filter_pools` rejects NaN/inf/non-numeric APY and TVL (NaN passed every
+  bound); Kiwi departure/return and Yahoo market times rendered in UTC, not
+  host-local time; flight `airline` keeps route order (was set order, so
+  the column changed between identical runs); `scrape_fb_local` email
+  extraction keeps first-seen order (`emails[0]` depended on set order).

@@ -19,7 +19,7 @@ import argparse
 import csv
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
@@ -224,9 +224,9 @@ def fetch_kiwi_tequila(origin: str, destination: str, date_from: str, date_to: s
                 "origin": origin,
                 "destination": destination,
                 "price_thb": flight.get("price", 0),
-                "airline": ",".join(set(r.get("airline", "") for r in flight.get("route", []))),
-                "departure": datetime.fromtimestamp(flight.get("dTime", 0)).strftime("%Y-%m-%d %H:%M") if flight.get("dTime") else "",
-                "return": datetime.fromtimestamp(flight.get("aTime", 0)).strftime("%Y-%m-%d %H:%M") if flight.get("aTime") else "",
+                "airline": ",".join(dict.fromkeys(r.get("airline", "") for r in flight.get("route", []))),
+                "departure": datetime.fromtimestamp(flight.get("dTime", 0), tz=timezone.utc).strftime("%Y-%m-%d %H:%M") if flight.get("dTime") else "",
+                "return": datetime.fromtimestamp(flight.get("aTime", 0), tz=timezone.utc).strftime("%Y-%m-%d %H:%M") if flight.get("aTime") else "",
                 "duration_hours": round(flight.get("fly_duration", 0) / 3600, 1) if flight.get("fly_duration") else 0,
                 "stops": flight.get("route", [{}]).__len__() - 1 if flight.get("route") else 0,
                 "url": flight.get("deep_link", ""),

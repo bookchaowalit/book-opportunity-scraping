@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 import csv
+import math
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -51,20 +52,35 @@ def fetch_pools() -> list:
         return []
 
 
+def finite_number(value):
+    """Return ``value`` as a finite float, or None for NaN/inf/non-numeric.
+
+    DeFiLlama JSON can carry NaN; NaN compares False against every bound, so
+    ``apy < min_apy`` never rejected it and it slipped through the filter.
+    """
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def filter_pools(pools: list, chains: list, min_apy: float, categories: list = None) -> list:
-    """Filter pools by chain, APY, and category."""
+    """Filter pools by chain, finite APY in [min_apy, 1000], TVL and category."""
     filtered = []
     for pool in pools:
         # Skip if chain not in list
         if chains and pool.get("chain", "") not in chains:
             continue
         # Skip if APY too low
-        apy = pool.get("apy", 0) or 0
-        if apy < min_apy:
+        apy = finite_number(pool.get("apy", 0) or 0)
+        if apy is None or apy < min_apy:
             continue
         # Skip if TVL too low (< $100k)
-        tvl = pool.get("tvlUsd", 0) or 0
-        if tvl < 100000:
+        tvl = finite_number(pool.get("tvlUsd", 0) or 0)
+        if tvl is None or tvl < 100000:
             continue
         # Skip if pool is suspicious (APY > 1000% is likely a bug or rug)
         if apy > 1000:
@@ -74,7 +90,7 @@ def filter_pools(pools: list, chains: list, min_apy: float, categories: list = N
             pool_cat = pool.get("category", "")
             if pool_cat not in categories:
                 continue
-        filtered.append(pool)
+        filtered.append({**pool, "apy": apy, "tvlUsd": tvl})
     return filtered
 
 

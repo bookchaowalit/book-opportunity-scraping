@@ -18,7 +18,7 @@ Usage:
 import argparse
 import csv
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -68,7 +68,7 @@ def fetch_quote(symbol: str) -> dict:
             "change_pct": round(change_pct, 2),
             "currency": meta.get("currency", "USD"),
             "exchange": meta.get("exchangeName", ""),
-            "timestamp": datetime.fromtimestamp(meta.get("regularMarketTime", 0)).strftime("%Y-%m-%d %H:%M:%S") if meta.get("regularMarketTime") else "",
+            "timestamp": datetime.fromtimestamp(meta.get("regularMarketTime", 0), tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if meta.get("regularMarketTime") else "",
         }
     except Exception as e:
         print(f"  Warning: Failed to fetch {symbol}: {e}")
