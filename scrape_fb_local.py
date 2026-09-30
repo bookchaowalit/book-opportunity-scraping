@@ -16,7 +16,7 @@ import os
 import re
 import time
 from pathlib import Path
-from urllib.parse import quote_plus, urlsplit
+from urllib.parse import parse_qs, quote_plus, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -86,7 +86,7 @@ def search_bing(query: str, max_results: int = 10) -> list:
         
         if title_el and link_el:
             title = title_el.get_text(strip=True)
-            link = link_el.get('href', '')
+            link = unwrap_search_href(link_el.get('href', ''))
             snippet = snippet_el.get_text(strip=True) if snippet_el else ''
             
             # Only keep Facebook results
@@ -121,7 +121,7 @@ def search_duckduckgo(query: str, max_results: int = 10) -> list:
         
         if title_el:
             title = title_el.get_text(strip=True)
-            link = title_el.get('href', '')
+            link = unwrap_search_href(title_el.get('href', ''))
             snippet = snippet_el.get_text(strip=True) if snippet_el else ''
             
             # Only keep Facebook results
@@ -156,7 +156,7 @@ def search_google(query: str, page: int = 0) -> list:
         
         if title_el and link_el:
             title = title_el.get_text(strip=True)
-            link = link_el.get('href', '')
+            link = unwrap_search_href(link_el.get('href', ''))
             snippet = snippet_el.get_text(strip=True) if snippet_el else ''
             
             # Only keep Facebook results
@@ -164,6 +164,30 @@ def search_google(query: str, page: int = 0) -> list:
                 results.append((title, link, snippet))
     
     return results
+
+
+def unwrap_search_href(href: str) -> str:
+    """Return the destination of a search engine's redirect link.
+
+    DuckDuckGo's HTML endpoint links results as
+    ``//duckduckgo.com/l/?uddg=<encoded url>`` and Google as
+    ``/url?q=<url>&...``; host checks must run on the real destination.
+    Any other href is returned unchanged.
+    """
+    href = str(href or '')
+    try:
+        parts = urlsplit('https:' + href if href.startswith('//') else href)
+    except ValueError:
+        return href
+    host = (parts.hostname or '').lower().rstrip('.')
+    params = parse_qs(parts.query)  # values are already percent-decoded
+    if (host == 'duckduckgo.com' or host.endswith('.duckduckgo.com')) and parts.path.startswith('/l/'):
+        target = params.get('uddg', [''])[0]
+    elif parts.path == '/url' and (not host or host == 'google.com' or host.startswith('www.google.')):
+        target = (params.get('q') or params.get('url') or [''])[0]
+    else:
+        return href
+    return target if target.startswith(('http://', 'https://')) else href
 
 
 def host_matches(url: str, domain: str) -> bool:

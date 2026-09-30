@@ -76,11 +76,13 @@ def host_matches(url: str, domain: str) -> bool:
     A substring test (``domain in url``) also accepted lookalike hosts and
     any URL that merely mentions the domain in its path or query string.
     """
-    domain = str(domain).strip().lower().rstrip(".")
+    domain = str(domain).strip().lower().rstrip(".").removeprefix("www.")
     try:
         host = (urlsplit(str(url)).hostname or "").lower().rstrip(".")
     except ValueError:
         return False
+    # ``--domains www.example.com`` must still match a bare ``example.com`` result.
+    host = host.removeprefix("www.")
     return bool(domain) and (host == domain or host.endswith("." + domain))
 
 

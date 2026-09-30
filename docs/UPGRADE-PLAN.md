@@ -94,3 +94,10 @@ browser-UA/search-engine scraping and one PII-harvesting script.
   and query-string mentions), and the Google/YouTube exclusion, the
   Reddit/Etsy/eBay/ProductHunt/TAAFT result filters and the Facebook
   filter (which also decided which URLs get fetched) use `host_matches`.
+- Regression fix: `scrape_fb_local` checked the Facebook host on raw
+  search-result hrefs, so every DuckDuckGo (`//duckduckgo.com/l/?uddg=`) and
+  Google (`/url?q=`) redirect link was dropped. New `unwrap_search_href()`
+  resolves the redirect first; the host check runs on, and the result stores,
+  the real destination (email masking unchanged). SEO `host_matches` strips a
+  leading `www.` on both sides so `--domains www.example.com` matches a bare
+  `example.com` result. Fixture tests for both wrappers and the `www.` case.
