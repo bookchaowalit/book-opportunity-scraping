@@ -4,19 +4,18 @@ Scrape exchange rates via Frankfurter API (free, ECB rates, no auth).
 Tracks THB against major currencies and detects significant moves.
 
 Outputs:
-    - domains/money/finance/book-finance/data/exchange_rates.csv (latest snapshot)
-    - domains/money/finance/book-finance/data/exchange_history.csv (appended daily)
+    - data/book-finance/exchange_rates.csv (latest snapshot)
+    - data/book-finance/exchange_history.csv (appended daily)
 
 Usage:
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_exchange_rates.py
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_exchange_rates.py --base THB
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_exchange_rates.py --symbols USD,EUR,JPY,GBP,CNY
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_exchange_rates.py --alert-threshold 0.5
+    python3 scrape_exchange_rates.py
+    python3 scrape_exchange_rates.py --base THB
+    python3 scrape_exchange_rates.py --symbols USD,EUR,JPY,GBP,CNY
+    python3 scrape_exchange_rates.py --alert-threshold 0.5
 """
 
 import argparse
 import csv
-import json
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -27,8 +26,8 @@ except ImportError:
     print("ERROR: httpx required. Install: pip install httpx")
     sys.exit(1)
 
-ROOT = Path(__file__).resolve().parents[4]  # solo-empire/
-OUTPUT_DIR = ROOT / "domains" / "book-finance" / "data"
+ROOT = Path(__file__).resolve().parent  # repository root
+OUTPUT_DIR = ROOT / "data" / "book-finance"
 
 FRANKFURTER_BASE = "https://api.frankfurter.dev/v1"
 

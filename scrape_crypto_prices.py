@@ -4,21 +4,19 @@ Scrape cryptocurrency prices via CoinGecko API (free, no auth required).
 Tracks prices, 24h changes, and alerts on significant movements.
 
 Outputs:
-    - domains/money/finance/book-finance/data/crypto_prices.csv (latest snapshot)
-    - domains/money/finance/book-finance/data/crypto_history.csv (appended daily)
+    - data/book-finance/crypto_prices.csv (latest snapshot)
+    - data/book-finance/crypto_history.csv (appended daily)
     - Console alerts for >5% 24h moves
 
 Usage:
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_crypto_prices.py
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_crypto_prices.py --coins bitcoin,ethereum,solana
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_crypto_prices.py --alert-threshold 3
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_crypto_prices.py --vs-currency thb,usd
+    python3 scrape_crypto_prices.py
+    python3 scrape_crypto_prices.py --coins bitcoin,ethereum,solana
+    python3 scrape_crypto_prices.py --alert-threshold 3
+    python3 scrape_crypto_prices.py --vs-currency thb,usd
 """
 
 import argparse
 import csv
-import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -30,8 +28,8 @@ except ImportError:
     sys.exit(1)
 
 # Project root
-ROOT = Path(__file__).resolve().parents[4]  # solo-empire/
-OUTPUT_DIR = ROOT / "domains" / "book-finance" / "data"
+ROOT = Path(__file__).resolve().parent  # repository root
+OUTPUT_DIR = ROOT / "data" / "book-finance"
 
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 

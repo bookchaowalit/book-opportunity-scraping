@@ -4,20 +4,19 @@ Scrape flight prices from Skyscanner via free httpx+BS4 or Kiwi Tequila API.
 Tracks prices for routes you care about, alerts on price drops.
 
 Outputs:
-    - domains/life/wellness/book-travel/data/flight_prices.csv (latest snapshot)
-    - domains/life/wellness/book-travel/data/flight_prices_history.csv (appended)
+    - data/book-travel/flight_prices.csv (latest snapshot)
+    - data/book-travel/flight_prices_history.csv (appended)
     - Console alerts for price drops >15%
 
 Usage:
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_flight_prices.py
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_flight_prices.py --routes BKK-SIN,BKK-TYO
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_flight_prices.py --origin BKK --destinations SIN,TYO,HKG
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_flight_prices.py --alert-drop-pct 15
+    python3 scrape_flight_prices.py
+    python3 scrape_flight_prices.py --routes BKK-SIN,BKK-TYO
+    python3 scrape_flight_prices.py --origin BKK --destinations SIN,TYO,HKG
+    python3 scrape_flight_prices.py --alert-drop-pct 15
 """
 
 import argparse
 import csv
-import json
 import os
 import sys
 from datetime import datetime, timedelta
@@ -25,7 +24,7 @@ from pathlib import Path
 
 try:
     from dotenv import load_dotenv
-    _root = Path(__file__).resolve().parents[4]
+    _root = Path(__file__).resolve().parent
     load_dotenv(_root / ".env")
 except ImportError:
     pass
@@ -39,12 +38,12 @@ except ImportError:
 try:
     from bs4 import BeautifulSoup
 except ImportError:
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "beautifulsoup4", "-q"])
-    from bs4 import BeautifulSoup
+    # Never pip-install at runtime; install requirements.txt into a venv.
+    print("ERROR: beautifulsoup4 required. Install: pip install -r requirements.txt")
+    sys.exit(1)
 
-ROOT = Path(__file__).resolve().parents[4]
-OUTPUT_DIR = ROOT / "domains" / "book-travel" / "data"
+ROOT = Path(__file__).resolve().parent
+OUTPUT_DIR = ROOT / "data" / "book-travel"
 
 TEQUILA_API_KEY = os.environ.get("TEQUILA_API_KEY", "")
 TEQUILA_BASE = "https://api.tequila.kiwi.com"
@@ -116,7 +115,7 @@ def _decode_bing_redirect(href: str) -> str:
                 padded = b64_part + '=' * (4 - len(b64_part) % 4) if len(b64_part) % 4 else b64_part
                 return base64.b64decode(padded).decode('utf-8', errors='ignore')
             return urllib.parse.unquote(u_val)
-    except:
+    except (ValueError, UnicodeDecodeError):
         pass
     return href
 
@@ -235,7 +234,6 @@ def fetch_kiwi_tequila(origin: str, destination: str, date_from: str, date_to: s
 def fetch_skyscanner_free(origin: str, destination: str) -> list:
     """Fetch flight prices from Skyscanner via free httpx+BS4.
     Falls back to Firecrawl API if Skyscanner fails."""
-    import re
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     url = f"https://www.skyscanner.com/transport/flights/{origin.lower()}/{destination.lower()}/"
     try:
@@ -451,11 +449,26 @@ class FlightPriceScraper:
         return [{"source": "flights", "count": len(self.routes)}]
 
 
+def parse_routes(routes=None, origin="BKK", destinations=None):
+    """Normalize --routes / --origin + --destinations into (orig, dest) tuples."""
+    if isinstance(routes, str) and routes.strip():
+        parsed = []
+        for item in routes.split(","):
+            parts = [part.strip().upper() for part in item.split("-")]
+            if len(parts) == 2 and all(parts):
+                parsed.append((parts[0], parts[1]))
+        return parsed
+    if isinstance(destinations, str) and destinations.strip():
+        orig = (origin or "BKK").strip().upper()
+        return [(orig, dest.strip().upper()) for dest in destinations.split(",") if dest.strip()]
+    return routes if routes else list(DEFAULT_ROUTES)
+
+
 def main(routes=None, origin="BKK", days_ahead=30, alert_drop_pct=15.0, no_history=False, output_dir=None):
-    if routes is None:
-        routes = DEFAULT_ROUTES
-    elif isinstance(routes, str):
-        routes = [(r.split("-")[0], r.split("-")[1]) for r in routes.split(",") if "-" in r]
+    global OUTPUT_DIR
+    if output_dir:
+        OUTPUT_DIR = Path(output_dir)
+    routes = parse_routes(routes, origin)
 
     # Build date range
     date_from = datetime.now().strftime("%d/%m/%Y")
@@ -503,5 +516,28 @@ def main(routes=None, origin="BKK", days_ahead=30, alert_drop_pct=15.0, no_histo
     print("  Done.")
 
 
+def cli(argv=None):
+    parser = argparse.ArgumentParser(description="Track flight prices for a bounded set of routes")
+    parser.add_argument("--routes", help="Comma-separated ORIG-DEST pairs, e.g. BKK-SIN,BKK-TYO")
+    parser.add_argument("--origin", default="BKK", help="Origin used with --destinations (default: BKK)")
+    parser.add_argument("--destinations", help="Comma-separated destinations for --origin")
+    parser.add_argument("--days-ahead", type=int, default=30)
+    parser.add_argument("--alert-drop-pct", type=float, default=15.0)
+    parser.add_argument("--no-history", action="store_true")
+    parser.add_argument("--output-dir", default=None, help=f"Output directory (default: {OUTPUT_DIR})")
+    args = parser.parse_args(argv)
+    routes = parse_routes(args.routes, args.origin, args.destinations)
+    if not routes:
+        parser.error("no valid routes; use ORIG-DEST pairs")
+    main(
+        routes=routes,
+        origin=args.origin,
+        days_ahead=args.days_ahead,
+        alert_drop_pct=args.alert_drop_pct,
+        no_history=args.no_history,
+        output_dir=args.output_dir,
+    )
+
+
 if __name__ == "__main__":
-    main()
+    cli()

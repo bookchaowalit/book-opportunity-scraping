@@ -14,7 +14,6 @@ Usage:
 import json
 import os
 import re
-import sys
 import time
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -23,7 +22,9 @@ import requests
 from bs4 import BeautifulSoup
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = SCRIPT_DIR.parent / "data"
+# Keep contact data inside this repository's git-ignored data/ directory
+# (the old monorepo layout pointed one level above the repository).
+DATA_DIR = SCRIPT_DIR / "data"
 
 CONTACT_FILE = DATA_DIR / "contact_emails.json"
 TRACKER_FILE = DATA_DIR / "apply_tracker.csv"
@@ -53,6 +54,14 @@ GENERIC_EMAILS = {
     'info@', 'support@', 'hello@', 'contact@', 'careers@',
     'admin@', 'sales@', 'hr@', 'jobs@', 'recruitment@',
 }
+
+
+def mask_email(email: str) -> str:
+    """Mask an address for console/cron logs: ``jane.doe@x.com`` -> ``j***@x.com``."""
+    local, sep, domain = str(email).partition('@')
+    if not sep:
+        return '***'
+    return f"{local[:1]}***@{domain}"
 
 
 def search_bing(query: str, max_results: int = 10) -> list:
@@ -207,7 +216,7 @@ def fetch_fb_post_content(url: str) -> str:
                 return ' '.join(div.get_text(strip=True) for div in content_divs)
             # Fallback: get all text
             return soup.get_text(' ', strip=True)[:2000]
-    except Exception as e:
+    except Exception:
         pass
     return ''
 
@@ -250,7 +259,7 @@ def scrape_fb_groups(max_results_per_query: int = 10) -> dict:
                     if content:
                         emails = extract_emails_from_text(content)
                         if emails:
-                            print(f"      Found email: {emails[0]}")
+                            print(f"      Found email: {mask_email(emails[0])}")
                 
                 if company not in companies:
                     companies[company] = {
@@ -288,7 +297,7 @@ def add_to_pipeline(companies: dict, dry_run: bool = True):
                 contacts[company]['emails'] = data['emails']
                 contacts[company]['best'] = data['emails'][0]
                 updated_count += 1
-                print(f"  Updated: {company} → {data['emails'][0]}")
+                print(f"  Updated: {company} → {mask_email(data['emails'][0])}")
             continue
         
         # New company
@@ -303,20 +312,21 @@ def add_to_pipeline(companies: dict, dry_run: bool = True):
         }
         new_count += 1
         
-        email_info = best or 'no email'
+        email_info = mask_email(best) if best else 'no email'
         print(f"  New: {company} ({email_info})")
     
     print(f"\n{'='*60}")
-    print(f"Summary:")
+    print("Summary:")
     print(f"  New contacts: {new_count}")
     print(f"  Updated contacts: {updated_count}")
     print(f"  Total in DB: {len(contacts)}")
     
     if dry_run:
-        print(f"\n[DRY RUN] No changes written. Use --apply to save.")
+        print("\n[DRY RUN] No changes written. Use --apply to save.")
         return
     
     # Save contacts
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONTACT_FILE, 'w') as f:
         json.dump(contacts, f, indent=2, ensure_ascii=False)
     print(f"Saved to {CONTACT_FILE}")
@@ -347,7 +357,7 @@ def main():
     print(f"{'='*60}")
     
     for company, data in sorted(companies.items()):
-        emails = ', '.join(data['emails'][:2]) if data['emails'] else 'no email'
+        emails = ', '.join(mask_email(e) for e in data['emails'][:2]) if data['emails'] else 'no email'
         print(f"  {company:40s} | {emails}")
     
     add_to_pipeline(companies, dry_run=not args.apply)

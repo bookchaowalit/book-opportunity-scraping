@@ -4,20 +4,19 @@ Scrape AI tools and products from ProductHunt and AI directories.
 Detects new AI tools, trending products, and build opportunities.
 
 Outputs:
-    - domains/product/rnd/book-ai/data/ai_tools.csv (latest snapshot)
-    - domains/product/rnd/book-ai/data/ai_tools_history.csv (appended)
+    - data/book-ai/ai_tools.csv (latest snapshot)
+    - data/book-ai/ai_tools_history.csv (appended)
     - Console alerts for new opportunities
 
 Usage:
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_ai_tools.py
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_ai_tools.py --sources producthunt,theresanaiforthat
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_ai_tools.py --categories "chatbot,coding,image"
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_ai_tools.py --min-upvotes 50
+    python3 scrape_ai_tools.py
+    python3 scrape_ai_tools.py --sources producthunt,theresanaiforthat
+    python3 scrape_ai_tools.py --categories "chatbot,coding,image"
+    python3 scrape_ai_tools.py --min-upvotes 50
 """
 
 import argparse
 import csv
-import json
 import os
 import sys
 from datetime import datetime
@@ -25,7 +24,7 @@ from pathlib import Path
 
 try:
     from dotenv import load_dotenv
-    _root = Path(__file__).resolve().parents[4]
+    _root = Path(__file__).resolve().parent
     load_dotenv(_root / ".env")
 except ImportError:
     pass
@@ -39,12 +38,12 @@ except ImportError:
 try:
     from bs4 import BeautifulSoup
 except ImportError:
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "beautifulsoup4", "-q"])
-    from bs4 import BeautifulSoup
+    # Never pip-install at runtime; install requirements.txt into a venv.
+    print("ERROR: beautifulsoup4 required. Install: pip install -r requirements.txt")
+    sys.exit(1)
 
-ROOT = Path(__file__).resolve().parents[4]
-OUTPUT_DIR = ROOT / "domains" / "book-ai" / "data"
+ROOT = Path(__file__).resolve().parent
+OUTPUT_DIR = ROOT / "data" / "book-ai"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"}
 
@@ -111,7 +110,6 @@ def _brave_search(query: str, limit: int = 10) -> list:
     """Search via Brave Search (no API key needed, works from VPS IPs).
     Falls back to Bing if Brave is rate-limited."""
     import urllib.parse
-    import time
     try:
         url = f"https://search.brave.com/search?q={query.replace(' ', '+')}"
         resp = httpx.get(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"}, timeout=15, follow_redirects=True)
@@ -164,7 +162,7 @@ def _decode_bing_redirect(href: str) -> str:
                 padded = b64_part + '=' * (4 - len(b64_part) % 4) if len(b64_part) % 4 else b64_part
                 return base64.b64decode(padded).decode('utf-8', errors='ignore')
             return urllib.parse.unquote(u_val)
-    except:
+    except (ValueError, UnicodeDecodeError):
         pass
     return href
 
@@ -204,7 +202,6 @@ def _bing_search(query: str, limit: int = 10) -> list:
 def fetch_producthunt_free() -> list:
     """Fetch today's ProductHunt launches via free httpx+BS4.
     Falls back to Brave search, then Firecrawl API if ProductHunt fails."""
-    import re
     try:
         resp = httpx.get(
             "https://www.producthunt.com/topics/artificial-intelligence",
@@ -294,7 +291,6 @@ def parse_producthunt(markdown: str) -> list:
 def fetch_theresanaiforthat() -> list:
     """Fetch AI tools from There's An AI For That via free httpx+BS4.
     Falls back to Brave search, then Firecrawl API if TAAFT fails."""
-    import re
     try:
         resp = httpx.get(
             "https://theresanaiforthat.com/most-saved/",
@@ -518,7 +514,6 @@ def _firecrawl_taft() -> list:
 def fetch_ai_tool_directories() -> list:
     """Fetch from AI tool directories via Brave search.
     Falls back to Firecrawl API if Brave fails."""
-    import re
     tools = []
     categories = ["chatbot", "code-generation", "image-generation", "writing"]
     for cat in categories:

@@ -4,15 +4,15 @@ Scrape DeFi yields from DeFiLlama API (free, no auth required).
 Tracks APY across protocols and chains, alerts on high-yield opportunities.
 
 Outputs:
-    - domains/money/finance/book-finance/data/defi_yields.csv (latest snapshot)
-    - domains/money/finance/book-finance/data/defi_yields_history.csv (appended)
+    - data/book-finance/defi_yields.csv (latest snapshot)
+    - data/book-finance/defi_yields_history.csv (appended)
     - Console alerts for high APY or new pools
 
 Usage:
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_defi_yields.py
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_defi_yields.py --min-apy 10
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_defi_yields.py --chains ethereum,arbitrum
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_defi_yields.py --categories lending,staking
+    python3 scrape_defi_yields.py
+    python3 scrape_defi_yields.py --min-apy 10
+    python3 scrape_defi_yields.py --chains ethereum,arbitrum
+    python3 scrape_defi_yields.py --categories lending,staking
 """
 
 import argparse
@@ -27,8 +27,8 @@ except ImportError:
     print("ERROR: httpx required. Install: pip install httpx")
     sys.exit(1)
 
-ROOT = Path(__file__).resolve().parents[4]
-OUTPUT_DIR = ROOT / "domains" / "book-finance" / "data"
+ROOT = Path(__file__).resolve().parent
+OUTPUT_DIR = ROOT / "data" / "book-finance"
 
 DEFILLAMA_BASE = "https://yields.llama.fi"
 
@@ -248,7 +248,7 @@ def main():
         append_history(filtered)
 
     # Top yields by chain
-    print(f"\n  TOP YIELDS BY CHAIN:")
+    print("\n  TOP YIELDS BY CHAIN:")
     by_chain = {}
     for pool in filtered:
         chain = pool.get("chain", "Unknown")

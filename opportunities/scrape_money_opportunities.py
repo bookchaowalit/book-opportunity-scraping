@@ -25,32 +25,56 @@ Outputs:
     - Console alerts for high-value opportunities
 
 Usage:
-    python3 domains/product/engineering/book-dev/book-scraping/opportunities/scrape_money_opportunities.py
-    python3 domains/product/engineering/book-dev/book-scraping/opportunities/scrape_money_opportunities.py --sources reddit,firecrawl-search,hn
-    python3 domains/product/engineering/book-dev/book-scraping/opportunities/scrape_money_opportunities.py --categories tcg,digital-products
-    python3 domains/product/engineering/book-dev/book-scraping/opportunities/scrape_money_opportunities.py --min-score 70
+    python3 opportunities/scrape_money_opportunities.py
+    python3 opportunities/scrape_money_opportunities.py --sources reddit,firecrawl-search,hn
+    python3 opportunities/scrape_money_opportunities.py --categories tcg,digital-products
+    python3 opportunities/scrape_money_opportunities.py --min-score 70
 """
 
 import argparse
 import csv
 import json
 import os
-import sqlite3
+import re
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any
-from xml.etree import ElementTree as ET
 
-# Import database connection helper
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "infra" / "scripts" / "utils"))
-from db_connect import get_db_connection
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _find_solo_empire_root() -> Path | None:
+    """Locate the optional parent Solo Empire checkout.
+
+    ``SOLO_EMPIRE_ROOT`` wins; otherwise walk up from this repository. A
+    standalone clone has no parent, and the DB/dashboard integrations then
+    stay disabled instead of crashing on import.
+    """
+    candidates = []
+    env_root = os.environ.get("SOLO_EMPIRE_ROOT", "").strip()
+    if env_root:
+        candidates.append(Path(env_root).expanduser())
+    candidates.extend(REPO_ROOT.parents)
+    for candidate in candidates:
+        if (candidate / "infra" / "scripts" / "utils" / "db_connect.py").is_file():
+            return candidate.resolve()
+    return None
+
+
+SOLO_EMPIRE_ROOT = _find_solo_empire_root()
+get_db_connection = None
+if SOLO_EMPIRE_ROOT is not None:
+    sys.path.insert(0, str(SOLO_EMPIRE_ROOT / "infra" / "scripts" / "utils"))
+    try:
+        from db_connect import get_db_connection  # type: ignore
+    except ImportError:
+        get_db_connection = None
 
 try:
     from dotenv import load_dotenv
-    _root = Path(__file__).resolve().parents[4]
-    load_dotenv(_root / ".env")
+    load_dotenv(REPO_ROOT / ".env")
 except ImportError:
     pass
 
@@ -63,18 +87,49 @@ except ImportError:
 try:
     from bs4 import BeautifulSoup
 except ImportError:
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "beautifulsoup4", "-q"])
-    from bs4 import BeautifulSoup
+    # Never pip-install at runtime; install requirements.txt into a venv.
+    print("ERROR: beautifulsoup4 required. Install: pip install -r requirements.txt")
+    sys.exit(1)
 
-ROOT = Path(__file__).resolve().parents[4]
+# Parent checkout when present (shared DB, briefings); else this repository.
+ROOT = SOLO_EMPIRE_ROOT or REPO_ROOT
 OUTPUT_DIR = Path(__file__).resolve().parent / "data"
 DB_PATH = ROOT / "infra" / "database" / "solo-empire.db"
+if get_db_connection is None:
+    # Every DB helper checks DB_PATH.exists() first, so point it nowhere.
+    DB_PATH = REPO_ROOT / "data" / "db-unavailable" / "solo-empire.db"
 SOURCE_HEALTH_FILE = OUTPUT_DIR / "source_health.json"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
+
+# ── Keyword matching ────────────────────────────────────────────
+_WORD_CACHE: Dict[str, "re.Pattern[str]"] = {}
+
+
+def has_keyword(text: str, keywords) -> bool:
+    """True when ``text`` mentions any keyword.
+
+    Short tokens ("ai", "api", "bot", "gpt", "llm") must match as whole
+    words; a plain substring test made "said", "email" or "Thailand" count as
+    AI and inflated scores. Longer keywords keep substring matching so
+    "automation" still matches "automations".
+    """
+    lowered = (text or "").lower()
+    for keyword in keywords:
+        kw = keyword.lower()
+        if len(kw) <= 3:
+            pattern = _WORD_CACHE.get(kw)
+            if pattern is None:
+                pattern = re.compile(rf"(?<![a-z0-9]){re.escape(kw)}(?![a-z0-9])")
+                _WORD_CACHE[kw] = pattern
+            if pattern.search(lowered):
+                return True
+        elif kw in lowered:
+            return True
+    return False
+
 
 # ── DuckDuckGo HTML search helper ────────────────────────────────
 def ddg_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
@@ -228,7 +283,7 @@ def scrape_reddit_rss() -> List[Dict[str, Any]]:
                 title_lower = title.lower()
                 if any(kw in title_lower for kw in ["money", "income", "profit", "sell", "revenue"]):
                     score = 82
-                if any(kw in title_lower for kw in ["ai", "automation", "passive"]):
+                if has_keyword(title_lower, ["ai", "automation", "passive"]):
                     score = 85
                 opportunities.append({
                     "title": title[:120],
@@ -280,10 +335,10 @@ def scrape_hackernews() -> List[Dict[str, Any]]:
                     "open source", "framework", "platform", "marketplace",
                     "generate", "automate", "build",
                 ]
-                if score > 50 and any(kw in title_lower for kw in opp_keywords):
+                if score > 50 and has_keyword(title_lower, opp_keywords):
                     opportunities.append({
                         "title": title[:120],
-                        "category": "ai-content" if "ai" in title_lower else "trending-products",
+                        "category": "ai-content" if has_keyword(title_lower, ["ai"]) else "trending-products",
                         "source": "Hacker News",
                         "price": "",
                         "url": url or f"https://news.ycombinator.com/item?id={story_id}",
@@ -332,14 +387,14 @@ def scrape_github_trending() -> List[Dict[str, Any]]:
             topics = repo.get("topics", [])
             combined = f"{name} {desc} {' '.join(topics)}".lower()
 
-            if stars > 5 and any(kw in combined for kw in [
+            if stars > 5 and has_keyword(combined, [
                 "ai", "agent", "saas", "tool", "bot", "automation",
                 "scraper", "api", "marketplace", "generator", "money",
                 "ecommerce", "finance", "productivity", "llm", "gpt",
             ]):
                 opportunities.append({
                     "title": f"{name}: {desc[:80]}",
-                    "category": "ai-content" if "ai" in combined else "trending-products",
+                    "category": "ai-content" if has_keyword(combined, ["ai"]) else "trending-products",
                     "source": "GitHub Trending",
                     "price": "",
                     "url": url,
@@ -577,7 +632,7 @@ def score_opportunity(opportunity: Dict[str, Any]) -> int:
     title_lower = opportunity.get('title', '').lower()
 
     # Boost for AI-related
-    if 'ai' in title_lower:
+    if has_keyword(title_lower, ['ai']):
         score += 10
 
     # Boost for money-related
@@ -676,7 +731,7 @@ def save_source_health(health_records: List[Dict[str, Any]]):
 def print_source_health_report(health_records: List[Dict[str, Any]]):
     """Print source health summary."""
     print(f"\n{'='*60}")
-    print(f"  SOURCE HEALTH REPORT")
+    print("  SOURCE HEALTH REPORT")
     print(f"{'='*60}")
 
     ok_sources = [h for h in health_records if h['status'] == 'ok']
@@ -985,7 +1040,7 @@ def save_to_db(opportunities: List[Dict[str, Any]]) -> int:
             # Derive scoring fields from trend_score
             pain = min(5, max(1, score // 20))
             budget = min(5, max(1, (score + 10) // 20))
-            ai_lev = 5 if "ai" in title.lower() else 3
+            ai_lev = 5 if has_keyword(title, ["ai"]) else 3
             dist = 3
             fit = min(5, max(1, score // 20))
 
@@ -1154,6 +1209,10 @@ def fuzzy_title_match(title_a: str, title_b: str) -> bool:
     words_b = set(title_b.lower().split())
     if not words_a or not words_b:
         return False
+    # Very short titles ("AI", "Show HN") would overlap 100% with many
+    # unrelated titles; only merge them on an exact match.
+    if min(len(words_a), len(words_b)) < 3:
+        return words_a == words_b
     overlap = len(words_a & words_b) / min(len(words_a), len(words_b))
     return overlap > 0.6
 
@@ -1317,7 +1376,7 @@ def send_telegram_digest(opportunities: List[Dict[str, Any]], new_count: int):
             lines.append(f"   🔗 {url}")
         lines.append("")
 
-    lines.append("_Run: python3 domains/product/engineering/book-dev/book-scraping/opportunities/scrape_money_opportunities.py_")
+    lines.append("_Run: python3 opportunities/scrape_money_opportunities.py_")
 
     message = "\n".join(lines)
 
@@ -1347,7 +1406,7 @@ def send_telegram_digest(opportunities: List[Dict[str, Any]], new_count: int):
                 timeout=15,
             )
             if resp2.status_code == 200:
-                print(f"  Telegram digest sent (plain text fallback)")
+                print("  Telegram digest sent (plain text fallback)")
                 return True
             print(f"  Warning: Telegram send failed: {resp2.status_code}")
             return False
@@ -1442,7 +1501,7 @@ def setup_cron():
         new_cron = current_cron.rstrip("\n") + f"\n{cron_cmd}\n"
         proc = subprocess.run(["crontab", "-"], input=new_cron, capture_output=True, text=True)
         if proc.returncode == 0:
-            print(f"  Cron job added: daily at 10:00 AM")
+            print("  Cron job added: daily at 10:00 AM")
             print(f"  Command: {cron_cmd[:80]}...")
         else:
             print(f"  Warning: crontab update failed: {proc.stderr}")
@@ -1651,13 +1710,13 @@ def main():
 
     # Print summary
     print(f"\n{'='*60}")
-    print(f"  SUMMARY")
+    print("  SUMMARY")
     print(f"{'='*60}")
     print(f"  Total opportunities: {len(unique_opportunities)}")
     print(f"  New opportunities: {len(new_opportunities)}")
 
     # Top opportunities by category
-    print(f"\n  TOP OPPORTUNITIES BY CATEGORY:")
+    print("\n  TOP OPPORTUNITIES BY CATEGORY:")
     for category, config in OPPORTUNITY_CATEGORIES.items():
         cat_opps = [o for o in unique_opportunities if o['category'] == category]
         if cat_opps:
@@ -1680,15 +1739,15 @@ def main():
 
     # Send Telegram digest if requested
     if args.send_digest:
-        print(f"\n  Sending Telegram digest...")
+        print("\n  Sending Telegram digest...")
         send_telegram_digest(unique_opportunities, len(new_opportunities))
 
     # Push high-score opportunities to Todoist if requested
     if args.push_todoist:
-        print(f"\n  Pushing to Todoist...")
+        print("\n  Pushing to Todoist...")
         push_to_todoist(unique_opportunities)
 
-    print(f"\n  Done.")
+    print("\n  Done.")
 
 
 class MoneyOpportunityScraper:
@@ -1780,20 +1839,20 @@ class MoneyOpportunityScraper:
         generate_dashboard_json(health_records, unique_opportunities, len(new_opportunities))
 
         print(f"\n{'='*60}")
-        print(f"  SUMMARY")
+        print("  SUMMARY")
         print(f"{'='*60}")
         print(f"  Total opportunities: {len(unique_opportunities)}")
         print(f"  New opportunities: {len(new_opportunities)}")
 
         if self.send_digest:
-            print(f"\n  Sending Telegram digest...")
+            print("\n  Sending Telegram digest...")
             send_telegram_digest(unique_opportunities, len(new_opportunities))
 
         if self.push_todoist:
-            print(f"\n  Pushing to Todoist...")
+            print("\n  Pushing to Todoist...")
             push_to_todoist(unique_opportunities)
 
-        print(f"\n  Done.")
+        print("\n  Done.")
         return [{"source": "money_opportunities", "count": len(unique_opportunities)}]
 
 
