@@ -4,28 +4,28 @@ Scrape AI tools and products from ProductHunt and AI directories.
 Detects new AI tools, trending products, and build opportunities.
 
 Outputs:
-    - domains/product/rnd/book-ai/data/ai_tools.csv (latest snapshot)
-    - domains/product/rnd/book-ai/data/ai_tools_history.csv (appended)
+    - data/book-ai/ai_tools.csv (latest snapshot)
+    - data/book-ai/ai_tools_history.csv (appended)
     - Console alerts for new opportunities
 
 Usage:
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_ai_tools.py
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_ai_tools.py --sources producthunt,theresanaiforthat
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_ai_tools.py --categories "chatbot,coding,image"
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_ai_tools.py --min-upvotes 50
+    python3 scrape_ai_tools.py
+    python3 scrape_ai_tools.py --sources producthunt,theresanaiforthat
+    python3 scrape_ai_tools.py --categories "chatbot,coding,image"
+    python3 scrape_ai_tools.py --min-upvotes 50
 """
 
 import argparse
 import csv
-import json
 import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 try:
     from dotenv import load_dotenv
-    _root = Path(__file__).resolve().parents[4]
+    _root = Path(__file__).resolve().parent
     load_dotenv(_root / ".env")
 except ImportError:
     pass
@@ -39,12 +39,19 @@ except ImportError:
 try:
     from bs4 import BeautifulSoup
 except ImportError:
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "beautifulsoup4", "-q"])
-    from bs4 import BeautifulSoup
+    # Never pip-install at runtime; install requirements.txt into a venv.
+    print("ERROR: beautifulsoup4 required. Install: pip install -r requirements.txt")
+    sys.exit(1)
 
-ROOT = Path(__file__).resolve().parents[4]
-OUTPUT_DIR = ROOT / "domains" / "book-ai" / "data"
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from atomic_io import append_csv_atomic, render_csv, write_text_atomic  # noqa: E402
+
+TOOL_FIELDS = ["name", "description", "url", "source", "upvotes", "category", "pricing", "tags",
+               "opportunity_tags", "scraped_at"]
+OUTPUT_DIR = ROOT / "data" / "book-ai"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"}
 
@@ -63,6 +70,19 @@ OPPORTUNITY_KEYWORDS = [
 ]
 
 DEFAULT_CATEGORIES = ["ai", "developer-tools", "productivity", "automation"]
+
+
+def host_matches(url: str, domain: str) -> bool:
+    """True when ``url``'s host is ``domain`` or a subdomain of it.
+
+    A substring test (``domain in url``) also accepted lookalike hosts and
+    any URL that merely mentions the domain in its path or query string.
+    """
+    try:
+        host = (urlsplit(str(url)).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return host == domain or host.endswith("." + domain)
 
 
 def _is_valid_url(url: str) -> bool:
@@ -111,7 +131,6 @@ def _brave_search(query: str, limit: int = 10) -> list:
     """Search via Brave Search (no API key needed, works from VPS IPs).
     Falls back to Bing if Brave is rate-limited."""
     import urllib.parse
-    import time
     try:
         url = f"https://search.brave.com/search?q={query.replace(' ', '+')}"
         resp = httpx.get(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"}, timeout=15, follow_redirects=True)
@@ -164,7 +183,7 @@ def _decode_bing_redirect(href: str) -> str:
                 padded = b64_part + '=' * (4 - len(b64_part) % 4) if len(b64_part) % 4 else b64_part
                 return base64.b64decode(padded).decode('utf-8', errors='ignore')
             return urllib.parse.unquote(u_val)
-    except:
+    except (ValueError, UnicodeDecodeError):
         pass
     return href
 
@@ -204,7 +223,6 @@ def _bing_search(query: str, limit: int = 10) -> list:
 def fetch_producthunt_free() -> list:
     """Fetch today's ProductHunt launches via free httpx+BS4.
     Falls back to Brave search, then Firecrawl API if ProductHunt fails."""
-    import re
     try:
         resp = httpx.get(
             "https://www.producthunt.com/topics/artificial-intelligence",
@@ -256,6 +274,7 @@ def parse_producthunt(markdown: str) -> list:
     if buf:
         joined.append(buf)
 
+    seen_urls = set()
     for raw_line in joined:
         raw_line = raw_line.strip()
         # Match [text](url) where url is producthunt.com/posts/ or /products/
@@ -270,9 +289,11 @@ def parse_producthunt(markdown: str) -> list:
             parts = re.split(r'\\+n?\\*', raw_name)
             name = parts[0].strip()
             desc = parts[1].strip() if len(parts) > 1 else ""
-            # Skip non-product links (e.g. category pages, reviews)
-            if not name or len(name) > 100:
+            # Skip non-product links (e.g. category pages, reviews) and
+            # repeats (a product card links its name and its thumbnail).
+            if not name or len(name) > 100 or url in seen_urls:
                 continue
+            seen_urls.add(url)
             # Look for rating / upvotes in surrounding text
             upvotes = ""
             rating_match = re.search(r'(\d+\.?\d*)\s*\(', raw_line)
@@ -294,7 +315,6 @@ def parse_producthunt(markdown: str) -> list:
 def fetch_theresanaiforthat() -> list:
     """Fetch AI tools from There's An AI For That via free httpx+BS4.
     Falls back to Brave search, then Firecrawl API if TAAFT fails."""
-    import re
     try:
         resp = httpx.get(
             "https://theresanaiforthat.com/most-saved/",
@@ -320,14 +340,19 @@ def parse_taft(markdown: str) -> list:
     """Parse TAAFT markdown into tool listings."""
     import re
     tools = []
+    seen_urls = set()
     lines = markdown.split("\n")
     for line in lines:
         line = line.strip()
         # Look for tool links
         match = re.match(r'\[([^\]]+)\]\((https://theresanaiforthat\.com/ai/[^\)]+)\)', line)
         if match:
-            name = match.group(1)
+            name = match.group(1).strip()
             url = match.group(2)
+            # Image links ("![...]") and repeats of the same tool are skipped.
+            if not name or name.startswith("!") or url in seen_urls:
+                continue
+            seen_urls.add(url)
             tools.append({
                 "name": name,
                 "description": "",
@@ -385,7 +410,7 @@ def _brave_producthunt() -> list:
     tools = []
     for r in results:
         url = r.get("url", "")
-        if "producthunt.com" in url and _is_valid_url(url):
+        if host_matches(url, "producthunt.com") and _is_valid_url(url):
             # Extract clean name from URL slug (most reliable)
             name = _name_from_ph_url(url)
             if not name:
@@ -430,7 +455,7 @@ def _brave_taft() -> list:
     tools = []
     for r in results:
         url = r.get("url", "")
-        if "theresanaiforthat.com" in url and _is_valid_url(url):
+        if host_matches(url, "theresanaiforthat.com") and _is_valid_url(url):
             # Extract clean name from URL slug
             name = _name_from_taft_url(url)
             if not name:
@@ -518,7 +543,6 @@ def _firecrawl_taft() -> list:
 def fetch_ai_tool_directories() -> list:
     """Fetch from AI tool directories via Brave search.
     Falls back to Firecrawl API if Brave fails."""
-    import re
     tools = []
     categories = ["chatbot", "code-generation", "image-generation", "writing"]
     for cat in categories:
@@ -567,7 +591,7 @@ def load_previous_urls() -> set:
     history_file = OUTPUT_DIR / "ai_tools_history.csv"
     urls = set()
     if history_file.exists():
-        with open(history_file, "r") as f:
+        with open(history_file, "r", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
                 if row.get("url"):
@@ -575,34 +599,36 @@ def load_previous_urls() -> set:
     return urls
 
 
+def _tool_rows(tools: list) -> list:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return [{**tool, "opportunity_tags": tool.get("opportunity_tags", ""), "scraped_at": now} for tool in tools]
+
+
 def save_tools(tools: list):
-    """Save latest tool snapshot."""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    """Save latest tool snapshot (written atomically)."""
     filepath = OUTPUT_DIR / "ai_tools.csv"
-    fieldnames = ["name", "description", "url", "source", "upvotes", "category", "pricing", "tags", "opportunity_tags", "scraped_at"]
-    with open(filepath, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for tool in tools:
-            row = {**tool, "opportunity_tags": tool.get("opportunity_tags", ""), "scraped_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-            writer.writerow(row)
+    write_text_atomic(filepath, render_csv(_tool_rows(tools), TOOL_FIELDS))
     print(f"  Saved {len(tools)} tools to {filepath}")
 
 
 def append_history(tools: list):
-    """Append to history CSV."""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    """Append to history CSV (old + new rewritten atomically)."""
     filepath = OUTPUT_DIR / "ai_tools_history.csv"
-    fieldnames = ["name", "description", "url", "source", "upvotes", "category", "pricing", "tags", "opportunity_tags", "scraped_at"]
-    file_exists = filepath.exists()
-    with open(filepath, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if not file_exists:
-            writer.writeheader()
-        for tool in tools:
-            row = {**tool, "opportunity_tags": tool.get("opportunity_tags", ""), "scraped_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-            writer.writerow(row)
+    append_csv_atomic(filepath, _tool_rows(tools), TOOL_FIELDS)
     print(f"  Appended {len(tools)} rows to {filepath}")
+
+
+def persist_tools(tools: list) -> list:
+    """Write snapshot + history and return tools whose URL is new.
+
+    Previously seen URLs are read *before* this run is appended; reading
+    after the append made every tool look already-seen, so "NEW AI TOOLS"
+    never fired.
+    """
+    previous_urls = load_previous_urls()
+    save_tools(tools)
+    append_history(tools)
+    return [t for t in tools if t["url"] not in previous_urls]
 
 
 def main():
@@ -659,12 +685,7 @@ def main():
     # Detect opportunities
     opportunities = detect_opportunities(unique_tools)
 
-    save_tools(unique_tools)
-    append_history(unique_tools)
-
-    # New tools detection
-    previous_urls = load_previous_urls()
-    new_tools = [t for t in unique_tools if t["url"] not in previous_urls]
+    new_tools = persist_tools(unique_tools)
 
     if new_tools:
         print(f"\n  *** {len(new_tools)} NEW AI TOOLS detected ***")

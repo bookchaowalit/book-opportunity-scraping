@@ -4,22 +4,21 @@ Scrape stock/crypto portfolio prices via Yahoo Finance API (free, no auth).
 Tracks prices, daily changes, and alerts on significant movements.
 
 Outputs:
-    - domains/money/finance/book-finance/data/stock_prices.csv (latest snapshot)
-    - domains/money/finance/book-finance/data/stock_history.csv (appended)
+    - data/book-finance/stock_prices.csv (latest snapshot)
+    - data/book-finance/stock_history.csv (appended)
     - Console alerts for >3% daily moves
 
 Usage:
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_stock_prices.py
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_stock_prices.py --symbols AAPL,MSFT,GOOGL
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_stock_prices.py --alert-threshold 2
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_stock_prices.py --no-history
+    python3 scrape_stock_prices.py
+    python3 scrape_stock_prices.py --symbols AAPL,MSFT,GOOGL
+    python3 scrape_stock_prices.py --alert-threshold 2
+    python3 scrape_stock_prices.py --no-history
 """
 
 import argparse
 import csv
-import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -28,8 +27,8 @@ except ImportError:
     print("ERROR: httpx required. Install: pip install httpx")
     sys.exit(1)
 
-ROOT = Path(__file__).resolve().parents[4]
-OUTPUT_DIR = ROOT / "domains" / "book-finance" / "data"
+ROOT = Path(__file__).resolve().parent
+OUTPUT_DIR = ROOT / "data" / "book-finance"
 
 # Yahoo Finance v8 API (free, no auth)
 YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart"
@@ -69,7 +68,7 @@ def fetch_quote(symbol: str) -> dict:
             "change_pct": round(change_pct, 2),
             "currency": meta.get("currency", "USD"),
             "exchange": meta.get("exchangeName", ""),
-            "timestamp": datetime.fromtimestamp(meta.get("regularMarketTime", 0)).strftime("%Y-%m-%d %H:%M:%S") if meta.get("regularMarketTime") else "",
+            "timestamp": datetime.fromtimestamp(meta.get("regularMarketTime", 0), tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if meta.get("regularMarketTime") else "",
         }
     except Exception as e:
         print(f"  Warning: Failed to fetch {symbol}: {e}")

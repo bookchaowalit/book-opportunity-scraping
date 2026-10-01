@@ -1,0 +1,10 @@
+{
+  "topstories": [1, 2, 3, 4, 5],
+  "items": {
+    "1": {"id": 1, "type": "story", "title": "Show HN: An AI tool that automates invoices", "score": 420, "url": "https://example.com/invoices"},
+    "2": {"id": 2, "type": "story", "title": "What I said to my landlord", "score": 900, "url": "https://example.com/landlord"},
+    "3": {"id": 3, "type": "job", "title": "Startup X is hiring (YC)", "score": 300},
+    "4": {"id": 4, "type": "story", "title": "Launch of an open source framework", "score": 40, "url": "https://example.com/low"},
+    "5": {"id": 5, "type": "story", "title": "Building a SaaS business on weekends", "score": 120}
+  }
+}

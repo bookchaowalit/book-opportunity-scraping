@@ -4,19 +4,20 @@ Scrape DeFi yields from DeFiLlama API (free, no auth required).
 Tracks APY across protocols and chains, alerts on high-yield opportunities.
 
 Outputs:
-    - domains/money/finance/book-finance/data/defi_yields.csv (latest snapshot)
-    - domains/money/finance/book-finance/data/defi_yields_history.csv (appended)
+    - data/book-finance/defi_yields.csv (latest snapshot)
+    - data/book-finance/defi_yields_history.csv (appended)
     - Console alerts for high APY or new pools
 
 Usage:
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_defi_yields.py
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_defi_yields.py --min-apy 10
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_defi_yields.py --chains ethereum,arbitrum
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_defi_yields.py --categories lending,staking
+    python3 scrape_defi_yields.py
+    python3 scrape_defi_yields.py --min-apy 10
+    python3 scrape_defi_yields.py --chains ethereum,arbitrum
+    python3 scrape_defi_yields.py --categories lending,staking
 """
 
 import argparse
 import csv
+import math
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -27,8 +28,8 @@ except ImportError:
     print("ERROR: httpx required. Install: pip install httpx")
     sys.exit(1)
 
-ROOT = Path(__file__).resolve().parents[4]
-OUTPUT_DIR = ROOT / "domains" / "book-finance" / "data"
+ROOT = Path(__file__).resolve().parent
+OUTPUT_DIR = ROOT / "data" / "book-finance"
 
 DEFILLAMA_BASE = "https://yields.llama.fi"
 
@@ -51,20 +52,35 @@ def fetch_pools() -> list:
         return []
 
 
+def finite_number(value):
+    """Return ``value`` as a finite float, or None for NaN/inf/non-numeric.
+
+    DeFiLlama JSON can carry NaN; NaN compares False against every bound, so
+    ``apy < min_apy`` never rejected it and it slipped through the filter.
+    """
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def filter_pools(pools: list, chains: list, min_apy: float, categories: list = None) -> list:
-    """Filter pools by chain, APY, and category."""
+    """Filter pools by chain, finite APY in [min_apy, 1000], TVL and category."""
     filtered = []
     for pool in pools:
         # Skip if chain not in list
         if chains and pool.get("chain", "") not in chains:
             continue
         # Skip if APY too low
-        apy = pool.get("apy", 0) or 0
-        if apy < min_apy:
+        apy = finite_number(pool.get("apy", 0) or 0)
+        if apy is None or apy < min_apy:
             continue
         # Skip if TVL too low (< $100k)
-        tvl = pool.get("tvlUsd", 0) or 0
-        if tvl < 100000:
+        tvl = finite_number(pool.get("tvlUsd", 0) or 0)
+        if tvl is None or tvl < 100000:
             continue
         # Skip if pool is suspicious (APY > 1000% is likely a bug or rug)
         if apy > 1000:
@@ -74,7 +90,7 @@ def filter_pools(pools: list, chains: list, min_apy: float, categories: list = N
             pool_cat = pool.get("category", "")
             if pool_cat not in categories:
                 continue
-        filtered.append(pool)
+        filtered.append({**pool, "apy": apy, "tvlUsd": tvl})
     return filtered
 
 
@@ -82,7 +98,7 @@ def detect_stablecoin_pools(pools: list) -> list:
     """Find high-yield stablecoin pools."""
     stable_pools = []
     for pool in pools:
-        symbol = pool.get("symbol", "").upper()
+        symbol = str(pool.get("symbol") or "").upper()
         for sc in STABLECOINS:
             if sc in symbol:
                 apy = pool.get("apy", 0) or 0
@@ -248,7 +264,7 @@ def main():
         append_history(filtered)
 
     # Top yields by chain
-    print(f"\n  TOP YIELDS BY CHAIN:")
+    print("\n  TOP YIELDS BY CHAIN:")
     by_chain = {}
     for pool in filtered:
         chain = pool.get("chain", "Unknown")

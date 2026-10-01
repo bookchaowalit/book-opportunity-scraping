@@ -14,16 +14,17 @@ Usage:
 import json
 import os
 import re
-import sys
 import time
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import parse_qs, quote_plus, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = SCRIPT_DIR.parent / "data"
+# Keep contact data inside this repository's git-ignored data/ directory
+# (the old monorepo layout pointed one level above the repository).
+DATA_DIR = SCRIPT_DIR / "data"
 
 CONTACT_FILE = DATA_DIR / "contact_emails.json"
 TRACKER_FILE = DATA_DIR / "apply_tracker.csv"
@@ -55,6 +56,14 @@ GENERIC_EMAILS = {
 }
 
 
+def mask_email(email: str) -> str:
+    """Mask an address for console/cron logs: ``jane.doe@x.com`` -> ``j***@x.com``."""
+    local, sep, domain = str(email).partition('@')
+    if not sep:
+        return '***'
+    return f"{local[:1]}***@{domain}"
+
+
 def search_bing(query: str, max_results: int = 10) -> list:
     """Search Bing and return list of (title, url, snippet) tuples."""
     url = f"https://www.bing.com/search?q={quote_plus(query)}&count={max_results}"
@@ -77,11 +86,11 @@ def search_bing(query: str, max_results: int = 10) -> list:
         
         if title_el and link_el:
             title = title_el.get_text(strip=True)
-            link = link_el.get('href', '')
+            link = unwrap_search_href(link_el.get('href', ''))
             snippet = snippet_el.get_text(strip=True) if snippet_el else ''
             
             # Only keep Facebook results
-            if 'facebook.com' in link:
+            if host_matches(link, 'facebook.com'):
                 results.append((title, link, snippet))
                 
                 if len(results) >= max_results:
@@ -112,11 +121,11 @@ def search_duckduckgo(query: str, max_results: int = 10) -> list:
         
         if title_el:
             title = title_el.get_text(strip=True)
-            link = title_el.get('href', '')
+            link = unwrap_search_href(title_el.get('href', ''))
             snippet = snippet_el.get_text(strip=True) if snippet_el else ''
             
             # Only keep Facebook results
-            if 'facebook.com' in link:
+            if host_matches(link, 'facebook.com'):
                 results.append((title, link, snippet))
                 
                 if len(results) >= max_results:
@@ -147,14 +156,51 @@ def search_google(query: str, page: int = 0) -> list:
         
         if title_el and link_el:
             title = title_el.get_text(strip=True)
-            link = link_el.get('href', '')
+            link = unwrap_search_href(link_el.get('href', ''))
             snippet = snippet_el.get_text(strip=True) if snippet_el else ''
             
             # Only keep Facebook results
-            if 'facebook.com' in link:
+            if host_matches(link, 'facebook.com'):
                 results.append((title, link, snippet))
     
     return results
+
+
+def unwrap_search_href(href: str) -> str:
+    """Return the destination of a search engine's redirect link.
+
+    DuckDuckGo's HTML endpoint links results as
+    ``//duckduckgo.com/l/?uddg=<encoded url>`` and Google as
+    ``/url?q=<url>&...``; host checks must run on the real destination.
+    Any other href is returned unchanged.
+    """
+    href = str(href or '')
+    try:
+        parts = urlsplit('https:' + href if href.startswith('//') else href)
+    except ValueError:
+        return href
+    host = (parts.hostname or '').lower().rstrip('.')
+    params = parse_qs(parts.query)  # values are already percent-decoded
+    if (host == 'duckduckgo.com' or host.endswith('.duckduckgo.com')) and parts.path.startswith('/l/'):
+        target = params.get('uddg', [''])[0]
+    elif parts.path == '/url' and (not host or host == 'google.com' or host.startswith('www.google.')):
+        target = (params.get('q') or params.get('url') or [''])[0]
+    else:
+        return href
+    return target if target.startswith(('http://', 'https://')) else href
+
+
+def host_matches(url: str, domain: str) -> bool:
+    """True when ``url``'s host is ``domain`` or a subdomain of it.
+
+    A substring test (``domain in url``) also accepted lookalike hosts and
+    any URL that merely mentions the domain in its path or query string.
+    """
+    try:
+        host = (urlsplit(str(url)).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return host == domain or host.endswith("." + domain)
 
 
 def extract_emails_from_text(text: str) -> list:
@@ -171,7 +217,8 @@ def extract_emails_from_text(text: str) -> list:
         if any(x in email_lower for x in ['example.com', 'domain.com', 'email.com', 'sentry.io']):
             continue
         filtered.append(email)
-    return list(set(filtered))
+    # Keep first-seen order: ``best = emails[0]`` must not depend on set order.
+    return list(dict.fromkeys(filtered))
 
 
 def extract_company_from_title(title: str) -> str:
@@ -207,7 +254,7 @@ def fetch_fb_post_content(url: str) -> str:
                 return ' '.join(div.get_text(strip=True) for div in content_divs)
             # Fallback: get all text
             return soup.get_text(' ', strip=True)[:2000]
-    except Exception as e:
+    except Exception:
         pass
     return ''
 
@@ -244,13 +291,13 @@ def scrape_fb_groups(max_results_per_query: int = 10) -> dict:
                 emails = extract_emails_from_text(snippet)
                 
                 # If no email in snippet, try to fetch post content
-                if not emails and 'facebook.com' in url:
+                if not emails and host_matches(url, 'facebook.com'):
                     print(f"      Fetching post content for {company}...")
                     content = fetch_fb_post_content(url)
                     if content:
                         emails = extract_emails_from_text(content)
                         if emails:
-                            print(f"      Found email: {emails[0]}")
+                            print(f"      Found email: {mask_email(emails[0])}")
                 
                 if company not in companies:
                     companies[company] = {
@@ -288,7 +335,7 @@ def add_to_pipeline(companies: dict, dry_run: bool = True):
                 contacts[company]['emails'] = data['emails']
                 contacts[company]['best'] = data['emails'][0]
                 updated_count += 1
-                print(f"  Updated: {company} → {data['emails'][0]}")
+                print(f"  Updated: {company} → {mask_email(data['emails'][0])}")
             continue
         
         # New company
@@ -303,20 +350,21 @@ def add_to_pipeline(companies: dict, dry_run: bool = True):
         }
         new_count += 1
         
-        email_info = best or 'no email'
+        email_info = mask_email(best) if best else 'no email'
         print(f"  New: {company} ({email_info})")
     
     print(f"\n{'='*60}")
-    print(f"Summary:")
+    print("Summary:")
     print(f"  New contacts: {new_count}")
     print(f"  Updated contacts: {updated_count}")
     print(f"  Total in DB: {len(contacts)}")
     
     if dry_run:
-        print(f"\n[DRY RUN] No changes written. Use --apply to save.")
+        print("\n[DRY RUN] No changes written. Use --apply to save.")
         return
     
     # Save contacts
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONTACT_FILE, 'w') as f:
         json.dump(contacts, f, indent=2, ensure_ascii=False)
     print(f"Saved to {CONTACT_FILE}")
@@ -347,7 +395,7 @@ def main():
     print(f"{'='*60}")
     
     for company, data in sorted(companies.items()):
-        emails = ', '.join(data['emails'][:2]) if data['emails'] else 'no email'
+        emails = ', '.join(mask_email(e) for e in data['emails'][:2]) if data['emails'] else 'no email'
         print(f"  {company:40s} | {emails}")
     
     add_to_pipeline(companies, dry_run=not args.apply)

@@ -4,29 +4,29 @@ Check SEO keyword rankings via free Google search + BS4.
 Tracks where your domains appear in search results for target keywords.
 
 Outputs:
-    - domains/marketing/growth/book-marketing/data/seo_rankings.csv (latest snapshot)
-    - domains/marketing/growth/book-marketing/data/seo_rankings_history.csv (appended)
+    - data/book-marketing/seo_rankings.csv (latest snapshot)
+    - data/book-marketing/seo_rankings_history.csv (appended)
     - Console alerts for ranking changes
 
 Usage:
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_seo_rankings.py
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_seo_rankings.py --domain bookchaowalit.com
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_seo_rankings.py --keywords "next.js developer" "python AI"
-    python3 domains/product/engineering/book-dev/book-scraping/scripts/scrape_seo_rankings.py --alert-improve 5
+    python3 scrape_seo_rankings.py
+    python3 scrape_seo_rankings.py --domain bookchaowalit.com
+    python3 scrape_seo_rankings.py --keywords "next.js developer" "python AI"
+    python3 scrape_seo_rankings.py --alert-improve 5
 """
 
 import argparse
 import csv
-import json
 import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 try:
     from dotenv import load_dotenv
     # Load .env from project root (5 levels up from this script)
-    _root = Path(__file__).resolve().parents[4]
+    _root = Path(__file__).resolve().parent
     load_dotenv(_root / ".env")
 except ImportError:
     pass  # dotenv not required, but .env won't be auto-loaded
@@ -40,12 +40,12 @@ except ImportError:
 try:
     from bs4 import BeautifulSoup
 except ImportError:
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "beautifulsoup4", "-q"])
-    from bs4 import BeautifulSoup
+    # Never pip-install at runtime; install requirements.txt into a venv.
+    print("ERROR: beautifulsoup4 required. Install: pip install -r requirements.txt")
+    sys.exit(1)
 
-ROOT = Path(__file__).resolve().parents[4]  # solo-empire/
-OUTPUT_DIR = ROOT / "domains" / "book-marketing" / "data"
+ROOT = Path(__file__).resolve().parent  # repository root
+OUTPUT_DIR = ROOT / "data" / "book-marketing"
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 
@@ -68,6 +68,22 @@ DEFAULT_DOMAINS = [
     "bookchaowalit.com",
     "chaowalit.com",
 ]
+
+
+def host_matches(url: str, domain: str) -> bool:
+    """True when ``url``'s host is ``domain`` or a subdomain of it.
+
+    A substring test (``domain in url``) also accepted lookalike hosts and
+    any URL that merely mentions the domain in its path or query string.
+    """
+    domain = str(domain).strip().lower().rstrip(".").removeprefix("www.")
+    try:
+        host = (urlsplit(str(url)).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    # ``--domains www.example.com`` must still match a bare ``example.com`` result.
+    host = host.removeprefix("www.")
+    return bool(domain) and (host == domain or host.endswith("." + domain))
 
 
 def _firecrawl_search(query: str, limit: int = 20) -> list:
@@ -126,7 +142,7 @@ def google_search(query: str, limit: int = 20) -> list:
             else:
                 url = href
             # Skip Google's own links
-            if 'google.com' in url or 'youtube.com' in url:
+            if host_matches(url, 'google.com') or host_matches(url, 'youtube.com'):
                 continue
             title = a_tag.get_text(strip=True)
             if title and len(title) > 3:
@@ -166,10 +182,9 @@ def check_ranking(keyword: str, target_domains: list, limit: int = 20) -> dict:
     for i, result in enumerate(results, 1):
         url = result.get("url", "")
         title = result.get("title", "")
-        description = result.get("description", "")
 
         for domain in target_domains:
-            if domain.lower() in url.lower():
+            if host_matches(url, domain):
                 rankings["found"] = True
                 rankings["all_positions"].append({
                     "rank": i,
