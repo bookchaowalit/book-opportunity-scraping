@@ -35,9 +35,9 @@ python3 opportunities/scrape_money_opportunities.py --help
 
 All scripts now resolve paths from this repository (the old monorepo
 `parents[4]` lookup crashed every script on import in a standalone clone).
-`scrape_money_opportunities.py` only enables its SQLite action tracker and
-dashboard merge when a parent Solo Empire checkout is found (walk-up or
-`SOLO_EMPIRE_ROOT`); otherwise those features are skipped.
+`scrape_money_opportunities.py` keeps its SQLite action tracker disabled (the
+control-plane database it used was retired) and merges the dashboard JSON under
+this repository's `data/briefings/`.
 
 ## Privacy and crawling (honest)
 

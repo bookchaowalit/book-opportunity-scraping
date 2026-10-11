@@ -46,32 +46,9 @@ from typing import List, Dict, Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _find_solo_empire_root() -> Path | None:
-    """Locate the optional parent Solo Empire checkout.
-
-    ``SOLO_EMPIRE_ROOT`` wins; otherwise walk up from this repository. A
-    standalone clone has no parent, and the DB/dashboard integrations then
-    stay disabled instead of crashing on import.
-    """
-    candidates = []
-    env_root = os.environ.get("SOLO_EMPIRE_ROOT", "").strip()
-    if env_root:
-        candidates.append(Path(env_root).expanduser())
-    candidates.extend(REPO_ROOT.parents)
-    for candidate in candidates:
-        if (candidate / "infra" / "scripts" / "utils" / "db_connect.py").is_file():
-            return candidate.resolve()
-    return None
-
-
-SOLO_EMPIRE_ROOT = _find_solo_empire_root()
+# The SQLite action tracker used the retired Solo Empire control-plane database.
+# It stays disabled: every DB helper checks DB_PATH.exists() first.
 get_db_connection = None
-if SOLO_EMPIRE_ROOT is not None:
-    sys.path.insert(0, str(SOLO_EMPIRE_ROOT / "infra" / "scripts" / "utils"))
-    try:
-        from db_connect import get_db_connection  # type: ignore
-    except ImportError:
-        get_db_connection = None
 
 try:
     from dotenv import load_dotenv
@@ -92,13 +69,9 @@ except ImportError:
     print("ERROR: beautifulsoup4 required. Install: pip install -r requirements.txt")
     sys.exit(1)
 
-# Parent checkout when present (shared DB, briefings); else this repository.
-ROOT = SOLO_EMPIRE_ROOT or REPO_ROOT
+ROOT = REPO_ROOT
 OUTPUT_DIR = Path(__file__).resolve().parent / "data"
-DB_PATH = ROOT / "infra" / "database" / "solo-empire.db"
-if get_db_connection is None:
-    # Every DB helper checks DB_PATH.exists() first, so point it nowhere.
-    DB_PATH = REPO_ROOT / "data" / "db-unavailable" / "solo-empire.db"
+DB_PATH = REPO_ROOT / "data" / "db-unavailable" / "action-tracker.db"  # never exists: tracker disabled
 SOURCE_HEALTH_FILE = OUTPUT_DIR / "source_health.json"
 
 HEADERS = {

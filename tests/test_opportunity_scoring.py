@@ -59,7 +59,7 @@ class DedupeTests(unittest.TestCase):
 
 
 class StandaloneTests(unittest.TestCase):
-    def test_imports_without_parent_checkout_and_keeps_db_disabled(self):
+    def test_imports_standalone_and_keeps_db_disabled(self):
         self.assertEqual(money.REPO_ROOT, ROOT)
         if money.get_db_connection is None:
             self.assertFalse(money.DB_PATH.exists())
