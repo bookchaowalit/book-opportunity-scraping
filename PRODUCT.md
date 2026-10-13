@@ -1,6 +1,6 @@
 # book-opportunity-scraping — Product brief
 
-**Slug:** `bookchaowalit/book-opportunity-scraping`  
+**Slug:** `bookchaowalit/opportunity-listing-scraper`  
 **Generated:** 2026-08-11 (bulk Book Dev closeout)  
 **Status:** starter / portfolio boundary
 
