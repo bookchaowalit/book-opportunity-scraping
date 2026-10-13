@@ -1,6 +1,6 @@
 # book-opportunity-scraping — Product brief
 
-**Slug:** `bookchaowalit/opportunity-listing-scraper`  
+**Slug:** `bookchaowalit/book-opportunity-scraping`  
 **Generated:** 2026-08-11 (bulk Book Dev closeout)  
 **Status:** starter / portfolio boundary
 
@@ -25,7 +25,7 @@ See `README.md` for install and run instructions when present.
 # book-opportunity-scraping
 
 **Tier:** C / tool prototype (portfolio breadth, not interview flagship)  
-**Owner path:** `bookchaowalit/book-apps/tools/opportunity-listing-scraper`
+**Owner path:** `bookchaowalit/book-apps/tools/book-opportunity-scraping`
 
 ## Purpose
 

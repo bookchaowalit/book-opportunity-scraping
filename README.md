@@ -1,7 +1,7 @@
 # book-opportunity-scraping
 
 **Tier:** C / tool prototype (portfolio breadth, not interview flagship)  
-**Owner path:** `bookchaowalit/book-apps/tools/opportunity-listing-scraper`
+**Owner path:** `bookchaowalit/book-apps/tools/book-opportunity-scraping`
 
 ## Purpose
 
